@@ -1,0 +1,20 @@
+[package]
+name = "torrent-peer"
+version = "0.1.0"
+authors = ["seb@kickseed <seb@kickseed>"]
+
+[[bin]]
+name = "peer"
+path = "src/main.rs"
+
+[lib]
+name = "lib"
+path = "src/lib/lib.rs"
+
+[dependencies]
+bytes = "*"
+futures = "*"
+tokio-io = "*"
+tokio-core = "*"
+tokio-proto = "*"
+tokio-service = "*"
