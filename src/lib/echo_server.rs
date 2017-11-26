@@ -15,9 +15,11 @@ impl Service for Echo {
     // Produce a future for computing a response from a request.
     fn call(&self, req: Self::Request) -> Self::Future {
         // processing request
-        let mut copy = req.clone();
-        copy.pop();
-        let result = format!("Response is a '{}' string", copy);
-        Box::new(future::ok(result))
+        let mut message = req;
+        message.pop();
+        println!("Request: {}", &message);
+        let response: String = message.chars().rev().collect();
+        println!("Response: {}", &response);
+        Box::new(future::ok(response))
     }
 }
