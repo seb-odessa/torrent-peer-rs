@@ -13,12 +13,14 @@ impl Service for Echo {
     type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
 
     // Produce a future for computing a response from a request.
-    fn call(&self, req: Self::Request) -> Self::Future {
-        // processing request
-        let mut message = req;
-        message.pop();
+    fn call(&self, message: Self::Request) -> Self::Future {
         println!("Request: {}", &message);
-        let response: String = message.chars().rev().collect();
+        let response;
+        if message == "[ping]".to_owned() {
+            response = "[pong]".to_owned()
+        } else {
+            response = format!("-={}=-", message)
+        }
         println!("Response: {}", &response);
         Box::new(future::ok(response))
     }
