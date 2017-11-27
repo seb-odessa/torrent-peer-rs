@@ -9,5 +9,5 @@ mod proto;
 mod echo_server;
 
 pub use codec::Codec;
-pub use proto::ServiceProto;
+pub use proto::PeerProto;
 pub use echo_server::Echo;

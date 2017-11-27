@@ -6,8 +6,8 @@ use tokio_proto::pipeline::ServerProto;
 
 use Codec;
 
-pub struct ServiceProto;
-impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for ServiceProto {
+pub struct PeerProto;
+impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for PeerProto {
     // For this protocol style, `Request` matches the `Item` type of the codec's `Decoder`
     type Request = String;
 
@@ -22,7 +22,7 @@ impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for ServiceProto {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + 'static> ClientProto<T> for ServiceProto {
+impl<T: AsyncRead + AsyncWrite + 'static> ClientProto<T> for PeerProto {
     // For this protocol style, `Request` matches the `Item` type of the codec's `Decoder`
     type Request = String;
 

@@ -10,7 +10,7 @@ use tokio_proto::{TcpClient, TcpServer};
 use tokio_core::reactor::Core;
 
 use lib::Echo;
-use lib::ServiceProto;
+use lib::PeerProto;
 
 
 use std::io;
@@ -21,13 +21,13 @@ fn main() {
     let args = env::args().collect::<Vec<_>>();
     if args.len() == 1 {
         let addr = "0.0.0.0:12345".parse().unwrap();
-        let server = TcpServer::new(ServiceProto, addr);
+        let server = TcpServer::new(PeerProto, addr);
         server.serve(|| Ok(Echo));
     } else {
         let mut core = Core::new().unwrap();
         let handle = core.handle();
         let address = "127.0.0.1:12345".parse().unwrap();
-        let connect = TcpClient::new(ServiceProto).connect(&address, &handle);
+        let connect = TcpClient::new(PeerProto).connect(&address, &handle);
         let send = connect.and_then(|connection| connection.call(String::from("hello")));
         core.run(send).unwrap();
     }
