@@ -16,3 +16,10 @@ pub use client::Client;
 pub use proto::PeerProto;
 pub use echo_server::Echo;
 pub use validate::Validate;
+
+
+use std::io;
+
+pub type PeerRequest = String;
+pub type PeerResponse = String;
+pub type PeerError = io::Error;
