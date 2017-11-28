@@ -35,7 +35,7 @@ impl Client {
 
     pub fn handshake(&self, hash_info: Vec<u8>, id: &[u8]) -> Box<ClientResult> {
         let peer_id = Vec::from(id);
-        let resp = self.call(Message::Handshake(hash_info.clone(), peer_id))
+        Box::new(self.call(Message::Handshake(hash_info.clone(), peer_id))
             .and_then(move |response| match response {
                 Message::Handshake(hash, _) => {
                     if hash == hash_info {
@@ -45,8 +45,7 @@ impl Client {
                     }
                 }
                 _ => make_error("Unexpected response"),
-            });
-        Box::new(resp)
+            }))
     }
 }
 
@@ -57,9 +56,9 @@ impl Service for Client {
     type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, request: Self::Request) -> Self::Future {
-        println!("Client: Request to Server: {:?}", request);
+        //println!("Client: Request to Server: {:?}", request);
         Box::new(self.inner.call(request).and_then(|response| {
-            println!("Client: Response from Server: {:?}", response);
+            // println!("Client: Response from Server: {:?}", response);
             Ok(response)
         }))
 

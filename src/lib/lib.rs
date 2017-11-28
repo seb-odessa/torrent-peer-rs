@@ -1,3 +1,5 @@
+#![feature(const_size_of)]
+
 extern crate bytes;
 extern crate futures;
 extern crate tokio_io;
@@ -5,6 +7,7 @@ extern crate tokio_core;
 extern crate tokio_proto;
 extern crate tokio_service;
 extern crate rustc_serialize;
+extern crate byteorder;
 
 mod codec;
 mod proto;
@@ -23,11 +26,11 @@ pub use echo_server::Echo;
 #[derive(PartialEq, Debug, Clone)]
 pub enum Message {
     Handshake(Vec<u8>, Vec<u8>),
-    KeepAlive(u8),
-    Choke(u8),
-    Unchoke(u8),
-    Interested(u8),
-    NotInterested(u8),
+    KeepAlive(),
+    Choke(),
+    Unchoke(),
+    Interested(),
+    NotInterested(),
     Have(u32),
     Bitfield(Vec<u8>),
     Request(u32, u32, u32),

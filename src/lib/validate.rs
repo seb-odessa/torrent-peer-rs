@@ -27,14 +27,14 @@ where
 
 
     fn call(&self, req: Message) -> Self::Future {
-        println!("Validator: Request:  {:?}", &req);
+        // println!("Validator: Request:  {:?}", &req);
 
         if req == Message::Error {
             let err = io::Error::new(io::ErrorKind::InvalidInput, ERROR_MESSAGE);
             return Box::new(future::done(Err(err)));
         }
         Box::new(self.inner.call(req).and_then(|resp| {
-            println!("Validator: Response: {:?}", &resp);
+            // println!("Validator: Response: {:?}", &resp);
             if resp == Message::Error {
                 Err(io::Error::new(io::ErrorKind::InvalidInput, ERROR_MESSAGE))
             } else {
