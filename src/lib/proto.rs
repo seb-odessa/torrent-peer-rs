@@ -4,35 +4,26 @@ use tokio_io::codec::Framed;
 use tokio_proto::pipeline::ClientProto;
 use tokio_proto::pipeline::ServerProto;
 
-use Codec;
+use Message;
+use PeerCodec;
 
 pub struct PeerProto;
 impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for PeerProto {
-    // For this protocol style, `Request` matches the `Item` type of the codec's `Decoder`
-    type Request = String;
-
-    // For this protocol style, `Response` matches the `Item` type of the codec's `Encoder`
-    type Response = String;
-
-    // A bit of boilerplate to hook in the codec:
-    type Transport = Framed<T, Codec>;
+    type Request = Message;
+    type Response = Message;
+    type Transport = Framed<T, PeerCodec>;
     type BindTransport = Result<Self::Transport, io::Error>;
     fn bind_transport(&self, io: T) -> Self::BindTransport {
-        Ok(io.framed(Codec))
+        Ok(io.framed(PeerCodec))
     }
 }
 
 impl<T: AsyncRead + AsyncWrite + 'static> ClientProto<T> for PeerProto {
-    // For this protocol style, `Request` matches the `Item` type of the codec's `Decoder`
-    type Request = String;
-
-    // For this protocol style, `Response` matches the `Item` type of the codec's `Encoder`
-    type Response = String;
-
-    // A bit of boilerplate to hook in the codec:
-    type Transport = Framed<T, Codec>;
+    type Request = Message;
+    type Response = Message;
+    type Transport = Framed<T, PeerCodec>;
     type BindTransport = Result<Self::Transport, io::Error>;
     fn bind_transport(&self, io: T) -> Self::BindTransport {
-        Ok(io.framed(Codec))
+        Ok(io.framed(PeerCodec))
     }
 }

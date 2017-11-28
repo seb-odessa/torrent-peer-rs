@@ -1,8 +1,9 @@
 use std::io;
 use tokio_service::{Service, NewService};
 use futures::{future, Future};
+use Message;
 
-
+const ERROR_MESSAGE: &'static str = "Was found malformed message";
 
 pub struct Validate<T> {
     pub inner: T,
@@ -16,29 +17,26 @@ impl<T> Validate<T> {
 
 impl<T> Service for Validate<T>
 where
-    T: Service<Request = String, Response = String, Error = io::Error>,
+    T: Service<Request = Message, Response = Message, Error = io::Error>,
     T::Future: 'static,
 {
-    type Request = String;
-    type Response = String;
+    type Request = Message;
+    type Response = Message;
     type Error = io::Error;
-    // For simplicity, box the future.
-    type Future = Box<Future<Item = String, Error = io::Error>>;
+    type Future = Box<Future<Item = Message, Error = io::Error>>;
 
-    fn call(&self, req: String) -> Self::Future {
-        // Make sure that the request does not include any new lines
-        if req.chars().find(|&c| c == '\n').is_some() {
-            let err = io::Error::new(io::ErrorKind::InvalidInput, "message contained new line");
+
+    fn call(&self, req: Message) -> Self::Future {
+        println!("Validator: Request:  {:?}", &req);
+
+        if req == Message::Error {
+            let err = io::Error::new(io::ErrorKind::InvalidInput, ERROR_MESSAGE);
             return Box::new(future::done(Err(err)));
         }
-
-        // Call the upstream service and validate the response
         Box::new(self.inner.call(req).and_then(|resp| {
-            if resp.chars().find(|&c| c == '\n').is_some() {
-                Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "message contained new line",
-                ))
+            println!("Validator: Response: {:?}", &resp);
+            if resp == Message::Error {
+                Err(io::Error::new(io::ErrorKind::InvalidInput, ERROR_MESSAGE))
             } else {
                 Ok(resp)
             }
@@ -47,11 +45,16 @@ where
 }
 
 impl<T> NewService for Validate<T>
-    where T: NewService<Request = String, Response = String, Error = io::Error>,
-          <T::Instance as Service>::Future: 'static
+where
+    T: NewService<
+        Request = Message,
+        Response = Message,
+        Error = io::Error,
+    >,
+    <T::Instance as Service>::Future: 'static,
 {
-    type Request = String;
-    type Response = String;
+    type Request = Message;
+    type Response = Message;
     type Error = io::Error;
     type Instance = Validate<T::Instance>;
 

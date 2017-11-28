@@ -1,5 +1,7 @@
 use Validate;
-use {PeerProto, PeerRequest, PeerResponse, PeerError};
+use PeerProto;
+use Message;
+use make_error;
 
 use std::io;
 use std::net::SocketAddr;
@@ -10,9 +12,10 @@ use tokio_proto::pipeline::ClientService;
 use tokio_core::net::TcpStream;
 use tokio_proto::TcpClient;
 use tokio_service::Service;
+use rustc_serialize::hex::ToHex;
 
-pub type ClientConnection = Future<Item = Client, Error = PeerError>;
-pub type ClientResult = Future<Item = (), Error = PeerError>;
+pub type ClientConnection = Future<Item = Client, Error = io::Error>;
+pub type ClientResult = Future<Item = (), Error = io::Error>;
 
 
 pub struct Client {
@@ -30,65 +33,33 @@ impl Client {
         Box::new(client)
     }
 
-    pub fn handshake(&self) -> Box<ClientResult> {
-        let resp = self.call("[handshake]".to_string()).and_then(
-            |resp| if resp !=
-                "[accept]"
-            {
-                Err(io::Error::new(io::ErrorKind::Other, "expected [accept]"))
-            } else {
-                Ok(())
-            },
-        );
+    pub fn handshake(&self, hash_info: Vec<u8>, id: &[u8]) -> Box<ClientResult> {
+        let peer_id = Vec::from(id);
+        let resp = self.call(Message::Handshake(hash_info.clone(), peer_id))
+            .and_then(move |response| match response {
+                Message::Handshake(hash, _) => {
+                    if hash == hash_info {
+                        Ok(())
+                    } else {
+                        make_error(format!("expected {:?}", hash_info.to_hex()))
+                    }
+                }
+                _ => make_error("Unexpected response"),
+            });
         Box::new(resp)
-    }
-
-    fn exchange(&self, msg: &str) -> Box<ClientResult> {
-        Box::new(self.call(msg.to_string()).and_then(|_| Ok(())))
-    }
-
-    pub fn greeting(&self) -> Box<ClientResult> {
-        self.exchange("[Hello]")
-    }
-
-    pub fn question(&self) -> Box<ClientResult> {
-        self.exchange("[How are You]")
-    }
-
-    pub fn story(&self) -> Box<ClientResult> {
-        self.exchange("[It is a time for a wonderful stories]")
-    }
-
-    pub fn bye(&self) -> Box<ClientResult> {
-        self.exchange("[Goodbye]")
-    }
-
-    pub fn execute(&self) -> Result<(), PeerError> {
-        self.handshake()
-            .and_then(move |_| {
-                self.greeting().and_then(move |_| {
-                    self.question().and_then(move |_| {
-                        self.story().and_then(move |_| {
-                            self.bye();
-                            Ok(())
-                        })
-                    })
-                })
-            })
-            .wait()
     }
 }
 
 impl Service for Client {
-    type Request = PeerRequest;
-    type Response = PeerResponse;
-    type Error = PeerError;
+    type Request = Message;
+    type Response = Message;
+    type Error = io::Error;
     type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, request: Self::Request) -> Self::Future {
-        println!("Request to Server: {:?}", request);
+        println!("Client: Request to Server: {:?}", request);
         Box::new(self.inner.call(request).and_then(|response| {
-            println!("Response from Server: {:?}", response);
+            println!("Client: Response from Server: {:?}", response);
             Ok(response)
         }))
 
