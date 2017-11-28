@@ -167,7 +167,8 @@ impl Encoder for PeerCodec {
     type Error = io::Error;
 
     fn encode(&mut self, msg: Message, buf: &mut BytesMut) -> io::Result<()> {
-        match msg.clone() {
+        println!("PeerCodec::encode() <= {:?}", &msg);
+        match msg {
             Message::Handshake(hash_info, peer_id) => {
                 if hash_info.len() != HASH_INFO_LEN {
                     return make_error("HASH INFO length shall be 20 bytes");
@@ -181,21 +182,23 @@ impl Encoder for PeerCodec {
                 buf.extend_from_slice(&hash_info);
                 buf.extend_from_slice(&peer_id);
 
-                println!(
-                    "PeerCodec::encode(Handshake([{}][{}])) -> {:?}",
-                    hash_info.to_hex(),
-                    String::from_utf8_lossy(&peer_id),
-                    &buf
-                );
+                println!("Handshake([{}][{}])",hash_info.to_hex(), String::from_utf8_lossy(&peer_id));
             },
             Message::KeepAlive() => {
                 buf.extend_from_slice(&KEEP_ALIVE);
+            },
+            Message::Choke() => {
+                let mut length: [u8; 4] = [0,0,0,0];
+                BigEndian::write_u32(&mut length, BYTE_SIZE as u32);
+                buf.extend_from_slice(&length);
+                buf.extend_from_slice(&[0x00; 1]);
+                println!("Choke()");
             }
             _ => {
-                println!("PeerCodec::encode({:?}) -> {:?}", &msg, &buf);
+                //
             }
         }
-
+        println!("PeerCodec::encode() => {:?}", &buf);
         Ok(())
     }
 }

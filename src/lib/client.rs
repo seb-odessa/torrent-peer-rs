@@ -34,8 +34,7 @@ impl Client {
     }
 
     pub fn handshake(&self, hash_info: Vec<u8>, id: &[u8]) -> Box<ClientResult> {
-        let peer_id = Vec::from(id);
-        Box::new(self.call(Message::Handshake(hash_info.clone(), peer_id))
+        Box::new(self.call(Message::Handshake(hash_info.clone(), Vec::from(id)))
             .and_then(move |response| match response {
                 Message::Handshake(hash, _) => {
                     if hash == hash_info {
@@ -46,6 +45,10 @@ impl Client {
                 }
                 _ => make_error("Unexpected response"),
             }))
+    }
+
+    pub fn choke(&self) -> Box<ClientResult> {
+        Box::new(self.call(Message::Choke()).and_then(|_| Ok(())))
     }
 }
 
