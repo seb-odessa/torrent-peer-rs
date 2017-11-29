@@ -26,20 +26,30 @@ fn main() {
     } else {
         let port = args.pop().unwrap_or(String::from("6881"));
         let host = args.pop().unwrap_or(String::from("127.0.0.1"));
-        let hash = args.pop().unwrap_or(String::from("5E433EDAE53E68AF02BC2650E057D0FC4FE41FCD"));
+        let hash = args.pop().unwrap_or(String::from(
+            "5E433EDAE53E68AF02BC2650E057D0FC4FE41FCD",
+        ));
         let uri = format!("{}:{}", host, port);
         println!("{} get {}", uri, hash);
         let address = match uri.parse() {
             Ok(addr) => addr,
-            Err(e) => {println!("{}", e); return;}
+            Err(e) => {
+                println!("{}", e);
+                return;
+            }
         };
 
         let mut core = Core::new().unwrap();
         let handle = core.handle();
         let hash_info: Vec<u8> = hash.as_str().from_hex().unwrap();
         let peer_id = "-01-TORRENT-PEER-RS-";
+        let mut piece = Vec::new();
         let client = Client::connect(&address, &handle).and_then(|client| {
-            client.handshake(hash_info, peer_id.as_bytes())
+            client.handshake(hash_info, peer_id.as_bytes()).and_then(
+                move |_| {
+                    client.unchoke().and_then(move |_| client.request(0, 0))
+                },
+            );
         });
 
         // let client = Client::connect(&address, &handle).and_then(|client| {

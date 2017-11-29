@@ -1,6 +1,7 @@
 use std::io;
 use std::str;
 use std::mem::size_of;
+
 use bytes::BytesMut;
 use tokio_io::codec::{Encoder, Decoder};
 use rustc_serialize::hex::ToHex;
@@ -15,9 +16,9 @@ const HASH_INFO_LEN: usize = 20;
 const PEER_ID_LEN: usize = 20;
 const RESERVED_LEN: usize = 8;
 const RESERVED: [u8; RESERVED_LEN] = [0, 0, 0, 0, 0, 0, 0, 0];
-const KEEP_ALIVE: [u8; 4] = [0,0,0,0];
-const BYTE_SIZE: usize =  size_of::<u8>();
-const SHORT_SIZE: usize =  size_of::<u16>();
+
+const BYTE_SIZE: usize = size_of::<u8>();
+const SHORT_SIZE: usize = size_of::<u16>();
 const NUMBER_SIZE: usize = size_of::<u32>();
 
 const CHOCKE_ID: u8 = 0;
@@ -36,7 +37,8 @@ pub struct PeerCodec;
 impl PeerCodec {
     fn handshake(&self, buf: &mut BytesMut) -> Option<Message> {
         //<PSTRLIN: u8><PSTR: 'BitTorrent protocol'><RESERVED[0u8; 8]><info_hash: [u8; 20]><peer_id: [u8; 20]>
-        const HANDSHAKE_LENGTH: usize = BYTE_SIZE + PSTR_SIZE + RESERVED_LEN + HASH_INFO_LEN + PEER_ID_LEN;
+        const HANDSHAKE_LENGTH: usize = BYTE_SIZE + PSTR_SIZE + RESERVED_LEN + HASH_INFO_LEN +
+            PEER_ID_LEN;
 
         if HANDSHAKE_LENGTH == buf.len() && buf[0] as usize == PSTR_SIZE &&
             &buf[1..(PSTR_SIZE + BYTE_SIZE) as usize] == PSTR.as_bytes()
@@ -119,7 +121,6 @@ impl PeerCodec {
             None
         }
     }
-
 }
 impl Decoder for PeerCodec {
     type Item = Message;
@@ -140,17 +141,17 @@ impl Decoder for PeerCodec {
                 let msg_id = buf.split_to(1)[0];
                 println!("PeerCodec::decode() msg_id = {}", &msg_id);
                 match msg_id {
-                    CHOCKE_ID  => Ok(Some(Message::Choke())),
+                    CHOCKE_ID => Ok(Some(Message::Choke())),
                     UNCHOCKE_ID => Ok(Some(Message::Unchoke())),
-                    INTERESTED_ID  => Ok(Some(Message::Interested())),
+                    INTERESTED_ID => Ok(Some(Message::Interested())),
                     NOT_INTERESTED_ID => Ok(Some(Message::NotInterested())),
-                    HAVE_ID  => Ok(self.have(buf)),
+                    HAVE_ID => Ok(self.have(buf)),
                     BITFIELD_ID => Ok(self.bitfield(buf, msg_len)),
-                    REQUEST_ID  => Ok(self.request(buf)),
+                    REQUEST_ID => Ok(self.request(buf)),
                     PIECE_ID => Ok(self.piece(buf, msg_len)),
-                    CANCEL_ID  => Ok(self.cancel(buf)),
+                    CANCEL_ID => Ok(self.cancel(buf)),
                     PORT_ID => Ok(self.port(buf)),
-                    _ => Ok(None)
+                    _ => Ok(None),
                 }
             } else {
                 Ok(None)
@@ -176,29 +177,125 @@ impl Encoder for PeerCodec {
                 if peer_id.len() != PEER_ID_LEN {
                     return make_error("PEER ID length shall be 20 bytes");
                 }
-                buf.extend_from_slice(&[19u8; 1]);
-                buf.extend(PSTR.as_bytes());
-                buf.extend_from_slice(&RESERVED);
-                buf.extend_from_slice(&hash_info);
-                buf.extend_from_slice(&peer_id);
-
-                println!("Handshake([{}][{}])",hash_info.to_hex(), String::from_utf8_lossy(&peer_id));
-            },
+                add_u8(buf, 0x13);
+                add_vec(buf, PSTR.as_bytes());
+                add_vec(buf, &RESERVED);
+                add_vec(buf, &hash_info);
+                add_vec(buf, &peer_id);
+                println!(
+                    "Handshake([{}][{}])",
+                    hash_info.to_hex(),
+                    String::from_utf8_lossy(&peer_id)
+                );
+            }
             Message::KeepAlive() => {
-                buf.extend_from_slice(&KEEP_ALIVE);
-            },
+                // keep-alive: <len=0000>
+                add_len(buf, 0x00);
+                println!("KeepAlive()");
+            }
             Message::Choke() => {
-                let mut length: [u8; 4] = [0,0,0,0];
-                BigEndian::write_u32(&mut length, BYTE_SIZE as u32);
-                buf.extend_from_slice(&length);
-                buf.extend_from_slice(&[0x00; 1]);
+                // choke: <len=0001><id=0>
+                add_len(buf, 0x01);
+                add_u8(buf, 0x00);
                 println!("Choke()");
             }
+            Message::Unchoke() => {
+                // unchoke: <len=0001><id=1>
+                add_len(buf, 0x01);
+                add_u8(buf, 0x01);
+                println!("Unchoke()");
+            }
+            Message::Interested() => {
+                // interested: <len=0001><id=2>
+                add_len(buf, 0x01);
+                add_u8(buf, 0x02);
+                println!("Interested()");
+            }
+            Message::NotInterested() => {
+                // not interested: <len=0001><id=3>
+                add_len(buf, 0x01);
+                add_u8(buf, 0x03);
+                println!("NotInterested()");
+            }
+            Message::Have(index) => {
+                // have: <len=0005><id=4><piece index>
+                add_len(buf, 0x05);
+                add_u8(buf, 0x04);
+                add_u32(buf, index);
+                println!("Message::Have({})", index);
+            }
+            Message::Bitfield(bitfield) => {
+                // bitfield: <len=0001+X><id=5><bitfield>
+                add_len(buf, 0x01 + bitfield.len() as u32);
+                add_u8(buf, 0x05);
+                add_vec(buf, &bitfield);
+                println!("Bitfield(vec[x; {}])", bitfield.len());
+            }
+            Message::Request(index, begin, length) => {
+                // request: <len=0013><id=6><index><begin><length>
+                add_len(buf, 0x0B);
+                add_u8(buf, 0x06);
+                add_u32(buf, index);
+                add_u32(buf, begin);
+                add_u32(buf, length);
+                println!("Message::Request({},{},{})", index, begin, length);
+            }
+            Message::Piece(index, begin, block) => {
+                // piece: <len=0009+X><id=7><index><begin><block>
+                add_len(buf, 0x09 + block.len() as u32);
+                add_u8(buf, 0x07);
+                add_u32(buf, index);
+                add_u32(buf, begin);
+                add_vec(buf, &block);
+                println!("Message::Piece({},{},[u8; {}])", index, begin, block.len());
+            }
+            Message::Cancel(index, begin, length) => {
+                // cancel: <len=0013><id=8><index><begin><length>
+                add_len(buf, 0x0B);
+                add_u8(buf, 0x08);
+                add_u32(buf, index);
+                add_u32(buf, begin);
+                add_u32(buf, length);
+                println!("Message::Cancel({},{},{})", index, begin, length);
+            }
+            Message::Port(port) => {
+                // port: <len=0003><id=9><listen-port>
+                add_len(buf, 0x03);
+                add_u8(buf, 0x09);
+                add_u16(buf, port);
+                println!("Message::Port({})", port);
+            }
             _ => {
-                //
+                println!("Unsupported Message:{:?}", &msg);
+                unimplemented!();
             }
         }
         println!("PeerCodec::encode() => {:?}", &buf);
         Ok(())
     }
+}
+
+fn add_u8(buf: &mut BytesMut, id: u8) {
+    let container = [id; size_of::<u8>()];
+    buf.extend_from_slice(&container);
+}
+
+fn add_len(buf: &mut BytesMut, value: u32) {
+    add_u32(buf, value)
+}
+
+fn add_u32(buf: &mut BytesMut, value: u32) {
+    let mut container = [0u8; size_of::<u32>()];
+    BigEndian::write_u32(&mut container, value);
+    buf.extend_from_slice(&container);
+}
+
+fn add_u16(buf: &mut BytesMut, value: u16) {
+    let mut container = [0u8; size_of::<u16>()];
+    BigEndian::write_u16(&mut container, value);
+    buf.extend_from_slice(&container);
+}
+
+fn add_vec(buf: &mut BytesMut, container: &[u8]) {
+    buf.extend_from_slice(container);
 }
