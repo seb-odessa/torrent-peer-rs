@@ -56,10 +56,30 @@ impl PeerCodec {
         }
     }
 
+    fn choke(&self) -> Option<Message> {
+        println!("Choke: <len=0001><id=0>");
+        Some(Message::Choke())
+    }
+
+    fn unchoke(&self) -> Option<Message> {
+        println!("Unchoke: <len=0001><id=1>");
+        Some(Message::Unchoke())
+    }
+
+    fn interested(&self) -> Option<Message> {
+        println!("Interested: <len=0001><id=2>");
+        Some(Message::Unchoke())
+    }
+
+    fn not_interested(&self) -> Option<Message> {
+        println!("NotInterested: <len=0001><id=3>");
+        Some(Message::Unchoke())
+    }
+
     fn have(&self, buf: &mut BytesMut) -> Option<Message> {
-        // have: <len=0005><id=4><piece index>
         if buf.len() >= NUMBER_SIZE {
             let index = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
+            println!("Have: <len=0005><id=4><{}>", index);
             Some(Message::Have(index))
         } else {
             None
@@ -68,8 +88,10 @@ impl PeerCodec {
 
     fn bitfield(&self, buf: &mut BytesMut, len: usize) -> Option<Message> {
         // bitfield: <len=0001+size_of bitfield><id=5><bitfield>
-        if buf.len() >= len {
-            let bitfield = Vec::from(buf.split_to(len - BYTE_SIZE).as_ref());
+        let data_len = len - BYTE_SIZE;
+        if buf.len() >= data_len {
+            let bitfield = Vec::from(buf.split_to(data_len).as_ref());
+            println!("Have: <len={}><id=5><[u8; {}]>", 1 + len, bitfield.len());
             Some(Message::Bitfield(bitfield))
         } else {
             None
@@ -82,6 +104,7 @@ impl PeerCodec {
             let index = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let begin = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let length = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
+            println!("Request: <len=0013><id=6><{} {} {}>", index, begin, length);
             Some(Message::Request(index, begin, length))
         } else {
             None
@@ -94,6 +117,7 @@ impl PeerCodec {
             let index = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let begin = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let length = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
+            println!("Cancel: <len=0013><id=8><{} {} {}>", index, begin, length);
             Some(Message::Cancel(index, begin, length))
         } else {
             None
@@ -106,6 +130,7 @@ impl PeerCodec {
             let index = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let begin = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let block = Vec::from(buf.split_to(len - BYTE_SIZE - 2 * NUMBER_SIZE).as_ref());
+            println!("Piece: <len=0013><id=7><{} {} [u8; {}]>", index, begin, block.len());
             Some(Message::Piece(index, begin, block))
         } else {
             None
@@ -116,6 +141,7 @@ impl PeerCodec {
         // port: <len=0003><id=9><listen-port>
         if buf.len() >= SHORT_SIZE {
             let port = BigEndian::read_u16(&buf.split_to(SHORT_SIZE));
+            println!("Port: <len=0003><id=9><{}>", port);
             Some(Message::Port(port))
         } else {
             None
@@ -128,23 +154,24 @@ impl Decoder for PeerCodec {
 
     fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Message>> {
         println!("PeerCodec::decode() <= {:?}", &buf);
+        println!("PeerCodec::decode() buf.len(): {}", &buf.len());
         if buf.is_empty() {
             Ok(None)
         } else if let Some(handshake) = self.handshake(buf) {
             Ok(Some(handshake))
-        } else if buf.len() >= NUMBER_SIZE {
+        } else if buf.len() < NUMBER_SIZE || BigEndian::read_u32(&buf) > buf.len() as u32 {
+            Ok(None)
+        } else {
             let msg_len = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE)) as usize;
-            println!("PeerCodec::decode() msg_len = {}", &msg_len);
+            println!("PeerCodec::decode() <= msg length: {}", &msg_len);
             if 0 == msg_len {
                 Ok(Some(Message::KeepAlive()))
-            } else if buf.len() > 0 {
-                let msg_id = buf.split_to(1)[0];
-                println!("PeerCodec::decode() msg_id = {}", &msg_id);
-                match msg_id {
-                    CHOCKE_ID => Ok(Some(Message::Choke())),
-                    UNCHOCKE_ID => Ok(Some(Message::Unchoke())),
-                    INTERESTED_ID => Ok(Some(Message::Interested())),
-                    NOT_INTERESTED_ID => Ok(Some(Message::NotInterested())),
+            } else {
+                match buf.split_to(1)[0] {
+                    CHOCKE_ID => Ok(self.choke()),
+                    UNCHOCKE_ID => Ok(self.unchoke()),
+                    INTERESTED_ID => Ok(self.interested()),
+                    NOT_INTERESTED_ID => Ok(self.not_interested()),
                     HAVE_ID => Ok(self.have(buf)),
                     BITFIELD_ID => Ok(self.bitfield(buf, msg_len)),
                     REQUEST_ID => Ok(self.request(buf)),
@@ -153,13 +180,7 @@ impl Decoder for PeerCodec {
                     PORT_ID => Ok(self.port(buf)),
                     _ => Ok(None),
                 }
-            } else {
-                Ok(None)
             }
-        } else {
-            let length = buf.len();
-            buf.split_to(length);
-            Ok(None)
         }
     }
 }

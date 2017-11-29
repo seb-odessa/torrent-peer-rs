@@ -43,13 +43,12 @@ fn main() {
         let handle = core.handle();
         let hash_info: Vec<u8> = hash.as_str().from_hex().unwrap();
         let peer_id = "-01-TORRENT-PEER-RS-";
-        let mut piece = Vec::new();
-        let client = Client::connect(&address, &handle).and_then(|client| {
+        let client = Client::connect(&address, &handle).and_then(|mut client| {
             client.handshake(hash_info, peer_id.as_bytes()).and_then(
                 move |_| {
-                    client.unchoke().and_then(move |_| client.request(0, 0))
+                    client.unchoke().and_then(move |_| client.request(0, 0, 64))
                 },
-            );
+            )
         });
 
         // let client = Client::connect(&address, &handle).and_then(|client| {
