@@ -1,9 +1,10 @@
 use std::io;
 use tokio_service::{Service, NewService};
-use futures::{future, Future};
+use futures::Future;
+//use futures::future;
 use Message;
 
-const ERROR_MESSAGE: &'static str = "Was found malformed message";
+//const ERROR_MESSAGE: &'static str = "Was found malformed message";
 
 pub struct Validate<T> {
     pub inner: T,
@@ -27,19 +28,10 @@ where
 
 
     fn call(&self, req: Message) -> Self::Future {
-        // println!("Validator: Request:  {:?}", &req);
-
-        if req == Message::Error {
-            let err = io::Error::new(io::ErrorKind::InvalidInput, ERROR_MESSAGE);
-            return Box::new(future::done(Err(err)));
-        }
+        println!("Request: {}", &req);
         Box::new(self.inner.call(req).and_then(|resp| {
-            // println!("Validator: Response: {:?}", &resp);
-            if resp == Message::Error {
-                Err(io::Error::new(io::ErrorKind::InvalidInput, ERROR_MESSAGE))
-            } else {
-                Ok(resp)
-            }
+            println!("Response: {}", &resp);
+            Ok(resp)
         }))
     }
 }

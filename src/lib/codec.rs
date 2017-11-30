@@ -4,11 +4,10 @@ use std::mem::size_of;
 
 use bytes::BytesMut;
 use tokio_io::codec::{Encoder, Decoder};
-use rustc_serialize::hex::ToHex;
+// use rustc_serialize::hex::ToHex;
 use byteorder::{ByteOrder, BigEndian};
 
 use Message;
-use make_error;
 
 const PSTR: &'static str = "BitTorrent protocol";
 const PSTR_SIZE: usize = 19;
@@ -57,29 +56,29 @@ impl PeerCodec {
     }
 
     fn choke(&self) -> Option<Message> {
-        println!("Choke: <len=0001><id=0>");
+        // choke: <len=0001><id=0>";
         Some(Message::Choke())
     }
 
     fn unchoke(&self) -> Option<Message> {
-        println!("Unchoke: <len=0001><id=1>");
+        // unchoke: <len=0001><id=1>";
         Some(Message::Unchoke())
     }
 
     fn interested(&self) -> Option<Message> {
-        println!("Interested: <len=0001><id=2>");
+        // interested: <len=0001><id=2>";
         Some(Message::Unchoke())
     }
 
     fn not_interested(&self) -> Option<Message> {
-        println!("NotInterested: <len=0001><id=3>");
+        // not interested: <len=0001><id=3>";
         Some(Message::Unchoke())
     }
 
     fn have(&self, buf: &mut BytesMut) -> Option<Message> {
+        // have: <len=0005><id=4><index>
         if buf.len() >= NUMBER_SIZE {
             let index = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
-            println!("Have: <len=0005><id=4><{}>", index);
             Some(Message::Have(index))
         } else {
             None
@@ -90,9 +89,8 @@ impl PeerCodec {
         // bitfield: <len=0001+size_of bitfield><id=5><bitfield>
         let data_len = len - BYTE_SIZE;
         if buf.len() >= data_len {
-            let bitfield = Vec::from(buf.split_to(data_len).as_ref());
-            println!("Have: <len={}><id=5><[u8; {}]>", 1 + len, bitfield.len());
-            Some(Message::Bitfield(bitfield))
+            let bits = Vec::from(buf.split_to(data_len).as_ref());
+            Some(Message::Bitfield(bits))
         } else {
             None
         }
@@ -104,7 +102,6 @@ impl PeerCodec {
             let index = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let begin = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let length = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
-            println!("Request: <len=0013><id=6><{} {} {}>", index, begin, length);
             Some(Message::Request(index, begin, length))
         } else {
             None
@@ -117,7 +114,6 @@ impl PeerCodec {
             let index = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let begin = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let length = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
-            println!("Cancel: <len=0013><id=8><{} {} {}>", index, begin, length);
             Some(Message::Cancel(index, begin, length))
         } else {
             None
@@ -125,12 +121,11 @@ impl PeerCodec {
     }
 
     fn piece(&self, buf: &mut BytesMut, len: usize) -> Option<Message> {
-        // piece: <len=0009+X><id=7><index><begin><block>
-        if buf.len() >= len {
+        // piece: <len=0007+X><id=7><index><begin><block>
+        if buf.len() >= len - BYTE_SIZE {
             let index = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let begin = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
             let block = Vec::from(buf.split_to(len - BYTE_SIZE - 2 * NUMBER_SIZE).as_ref());
-            println!("Piece: <len=0013><id=7><{} {} [u8; {}]>", index, begin, block.len());
             Some(Message::Piece(index, begin, block))
         } else {
             None
@@ -141,7 +136,6 @@ impl PeerCodec {
         // port: <len=0003><id=9><listen-port>
         if buf.len() >= SHORT_SIZE {
             let port = BigEndian::read_u16(&buf.split_to(SHORT_SIZE));
-            println!("Port: <len=0003><id=9><{}>", port);
             Some(Message::Port(port))
         } else {
             None
@@ -153,8 +147,7 @@ impl Decoder for PeerCodec {
     type Error = io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Message>> {
-        println!("PeerCodec::decode() <= {:?}", &buf);
-        println!("PeerCodec::decode() buf.len(): {}", &buf.len());
+        //        println!("PeerCodec::decode() <= {:?}", &buf);
         if buf.is_empty() {
             Ok(None)
         } else if let Some(handshake) = self.handshake(buf) {
@@ -163,7 +156,6 @@ impl Decoder for PeerCodec {
             Ok(None)
         } else {
             let msg_len = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE)) as usize;
-            println!("PeerCodec::decode() <= msg length: {}", &msg_len);
             if 0 == msg_len {
                 Ok(Some(Message::KeepAlive()))
             } else {
@@ -189,109 +181,95 @@ impl Encoder for PeerCodec {
     type Error = io::Error;
 
     fn encode(&mut self, msg: Message, buf: &mut BytesMut) -> io::Result<()> {
-        println!("PeerCodec::encode() <= {:?}", &msg);
+        // println!("PeerCodec::encode() <= {:?}", &msg);
         match msg {
             Message::Handshake(hash_info, peer_id) => {
                 if hash_info.len() != HASH_INFO_LEN {
-                    return make_error("HASH INFO length shall be 20 bytes");
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "HASH INFO length shall be 20 bytes",
+                    ));
                 }
                 if peer_id.len() != PEER_ID_LEN {
-                    return make_error("PEER ID length shall be 20 bytes");
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "PEER ID length shall be 20 bytes",
+                    ));
                 }
-                add_u8(buf, 0x13);
+                add_u8(buf, PSTR.len() as u8);
                 add_vec(buf, PSTR.as_bytes());
                 add_vec(buf, &RESERVED);
                 add_vec(buf, &hash_info);
                 add_vec(buf, &peer_id);
-                println!(
-                    "Handshake([{}][{}])",
-                    hash_info.to_hex(),
-                    String::from_utf8_lossy(&peer_id)
-                );
             }
             Message::KeepAlive() => {
                 // keep-alive: <len=0000>
                 add_len(buf, 0x00);
-                println!("KeepAlive()");
             }
             Message::Choke() => {
                 // choke: <len=0001><id=0>
                 add_len(buf, 0x01);
                 add_u8(buf, 0x00);
-                println!("Choke()");
             }
             Message::Unchoke() => {
                 // unchoke: <len=0001><id=1>
                 add_len(buf, 0x01);
                 add_u8(buf, 0x01);
-                println!("Unchoke()");
             }
             Message::Interested() => {
                 // interested: <len=0001><id=2>
                 add_len(buf, 0x01);
                 add_u8(buf, 0x02);
-                println!("Interested()");
             }
             Message::NotInterested() => {
                 // not interested: <len=0001><id=3>
                 add_len(buf, 0x01);
                 add_u8(buf, 0x03);
-                println!("NotInterested()");
             }
             Message::Have(index) => {
                 // have: <len=0005><id=4><piece index>
                 add_len(buf, 0x05);
                 add_u8(buf, 0x04);
                 add_u32(buf, index);
-                println!("Message::Have({})", index);
             }
             Message::Bitfield(bitfield) => {
                 // bitfield: <len=0001+X><id=5><bitfield>
                 add_len(buf, 0x01 + bitfield.len() as u32);
                 add_u8(buf, 0x05);
                 add_vec(buf, &bitfield);
-                println!("Bitfield(vec[x; {}])", bitfield.len());
             }
             Message::Request(index, begin, length) => {
                 // request: <len=0013><id=6><index><begin><length>
-                add_len(buf, 0x0B);
+                add_len(buf, 0x0D);
                 add_u8(buf, 0x06);
                 add_u32(buf, index);
                 add_u32(buf, begin);
                 add_u32(buf, length);
-                println!("Message::Request({},{},{})", index, begin, length);
             }
             Message::Piece(index, begin, block) => {
-                // piece: <len=0009+X><id=7><index><begin><block>
-                add_len(buf, 0x09 + block.len() as u32);
+                // piece: <len=0007+X><id=7><index><begin><block>
+                add_len(buf, 0x07 + block.len() as u32);
                 add_u8(buf, 0x07);
                 add_u32(buf, index);
                 add_u32(buf, begin);
                 add_vec(buf, &block);
-                println!("Message::Piece({},{},[u8; {}])", index, begin, block.len());
             }
             Message::Cancel(index, begin, length) => {
                 // cancel: <len=0013><id=8><index><begin><length>
-                add_len(buf, 0x0B);
+                add_len(buf, 0x0D);
                 add_u8(buf, 0x08);
                 add_u32(buf, index);
                 add_u32(buf, begin);
                 add_u32(buf, length);
-                println!("Message::Cancel({},{},{})", index, begin, length);
             }
             Message::Port(port) => {
                 // port: <len=0003><id=9><listen-port>
                 add_len(buf, 0x03);
                 add_u8(buf, 0x09);
                 add_u16(buf, port);
-                println!("Message::Port({})", port);
-            }
-            _ => {
-                println!("Unsupported Message:{:?}", &msg);
-                unimplemented!();
             }
         }
-        println!("PeerCodec::encode() => {:?}", &buf);
+        // println!("PeerCodec::encode() => {:?}", &buf);
         Ok(())
     }
 }

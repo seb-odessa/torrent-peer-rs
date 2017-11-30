@@ -7,7 +7,6 @@ extern crate tokio_service;
 extern crate rustc_serialize;
 
 use std::env;
-use futures::Future;
 use tokio_proto::TcpServer;
 use tokio_core::reactor::Core;
 use rustc_serialize::hex::FromHex;
@@ -41,26 +40,36 @@ fn main() {
 
         let mut core = Core::new().unwrap();
         let handle = core.handle();
-        let hash_info: Vec<u8> = hash.as_str().from_hex().unwrap();
-        let peer_id = "-01-TORRENT-PEER-RS-";
-        let client = Client::connect(&address, &handle).and_then(|mut client| {
-            client.handshake(hash_info, peer_id.as_bytes()).and_then(
-                move |_| {
-                    client.unchoke().and_then(move |_| client.request(0, 0, 64))
-                },
-            )
-        });
+        let info: Vec<u8> = hash.as_str().from_hex().unwrap();
+        let id = "-01-TORRENT-PEER-RS-".as_bytes();
 
-        // let client = Client::connect(&address, &handle).and_then(|client| {
-        //     client.handshake()
-        //         .and_then(move |_| {
-        //         client.greeting().and_then(move |_| {
-        //             client.question().and_then(move |_| {
-        //                 client.story().and_then(move |_| client.bye())
-        //             })
-        //         })
-        //     })
-        // });
-        core.run(client).unwrap();
+        let mut client = core.run(Client::connect(&address, &handle)).unwrap();
+        client = core.run(client.handshake(info, id)).unwrap();
+
+        client = core.run(client.ping()).unwrap();
+
+        client = core.run(client.unchoke_me()).unwrap();
+        if client.peer_choked && client.peer_intrested {
+            client = core.run(client.unchoke_peer()).unwrap();
+        }
+
+        let mut attempts = 5;
+        while attempts > 0 && client.am_choked {
+            client = core.run(client.unchoke_me()).unwrap();
+            attempts -= 1;
+        }
+
+        if !client.am_choked {
+            client = core.run(client.request(2, 4, 16384)).unwrap();
+        }
+        attempts = 5;
+        while attempts > 0 && !client.done {
+            client = core.run(client.ping()).unwrap();
+            attempts -= 1;
+        }
+        if !client.am_choked && !client.done {
+            core.run(client.request(3, 4, 16384)).unwrap();
+        }
+
     }
 }

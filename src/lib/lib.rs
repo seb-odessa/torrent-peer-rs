@@ -22,6 +22,8 @@ pub use validate::Validate;
 pub use client::Client;
 pub use echo_server::Echo;
 
+use std::fmt;
+use rustc_serialize::hex::ToHex;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Message {
@@ -37,10 +39,53 @@ pub enum Message {
     Piece(u32, u32, Vec<u8>),
     Cancel(u32, u32, u32),
     Port(u16),
-    Error,
 }
 
-use std::io;
-fn make_error<T: Into<String>>(msg: T) -> Result<(), io::Error> {
-    return Err(io::Error::new(io::ErrorKind::Other, msg.into()));
+impl fmt::Display for Message {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match self {
+            &Message::Handshake(ref info, ref id) => {
+                write!(
+                    fmt,
+                    "Handshake([{}][{}])",
+                    info.to_hex(),
+                    String::from_utf8_lossy(&id)
+                )?;
+            }
+            &Message::KeepAlive() => {
+                write!(fmt, "KeepAlive()")?;
+            }
+            &Message::Choke() => {
+                write!(fmt, "Choke()")?;
+            }
+            &Message::Unchoke() => {
+                write!(fmt, "Unchoke()")?;
+            }
+            &Message::Interested() => {
+                write!(fmt, "Interested()")?;
+            }
+            &Message::NotInterested() => {
+                write!(fmt, "NotInterested()")?;
+            }
+            &Message::Have(ref index) => {
+                write!(fmt, "Have({})", index)?;
+            }
+            &Message::Bitfield(ref bits) => {
+                write!(fmt, "Bitfield([u8; {}])", bits.len())?;
+            }
+            &Message::Request(ref index, ref offset, ref length) => {
+                write!(fmt, "Request({}, {}, {})", index, offset, length)?;
+            }
+            &Message::Piece(ref index, ref offset, ref data) => {
+                write!(fmt, "Piece({}, {}, [u8; {}])", index, offset, data.len())?;
+            }
+            &Message::Cancel(ref index, ref offset, ref length) => {
+                write!(fmt, "Cancel({}, {}, {})", index, offset, length)?;
+            }
+            &Message::Port(ref port) => {
+                write!(fmt, "Port({})", port)?;
+            }
+        };
+        write!(fmt, "")
+    }
 }
