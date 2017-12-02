@@ -16,41 +16,32 @@ use tokio_service::Service;
 use rustc_serialize::hex::ToHex;
 
 
-fn create<T: Into<String>>(msg: T) -> Result<Client, io::Error> {
-    return Err(io::Error::new(io::ErrorKind::Other, msg.into()));
-}
-
 pub type ClientConnection = Box<Future<Item = Client, Error = io::Error>>;
 
 pub struct Client {
     inner: Validate<ClientService<TcpStream, PeerProto>>,
-    pub done: bool,
     pub am_choked: bool,
     pub am_intrested: bool,
-    pub am_have: HashSet<u32>,
     pub peer_choked: bool,
     pub peer_intrested: bool,
     pub peer_have: HashSet<u32>,
     pub peer_requests: HashSet<(u32, u32, u32)>,
-    pub pieces: HashMap<(u32,u32), Vec<u8>>,
+    pub blocks: HashMap<(u32, u32), Vec<u8>>,
 }
 
 impl Client {
-
     pub fn connect(addr: &SocketAddr, handle: &Handle) -> ClientConnection {
         Box::new(TcpClient::new(PeerProto).connect(addr, handle).map(
             |service| {
                 Client {
                     inner: Validate { inner: service },
-                    done: false,
                     am_choked: true,
                     am_intrested: false,
-                    am_have: HashSet::new(),
                     peer_choked: true,
                     peer_intrested: false,
                     peer_have: HashSet::new(),
                     peer_requests: HashSet::new(),
-                    pieces: HashMap::new(),
+                    blocks: HashMap::new(),
                 }
             },
         ))
@@ -63,10 +54,13 @@ impl Client {
                     if hash == hash_info {
                         Ok(self)
                     } else {
-                        return create(format!("expected {:?}", hash_info.to_hex()));
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            format!("expected {:?}", hash_info.to_hex()).as_str(),
+                        ));
                     }
                 }
-                _ => return create("Unexpected response"),
+                _ => return Err(io::Error::new(io::ErrorKind::Other, "Unexpected response")),
             });
         Box::new(result)
     }
@@ -76,18 +70,10 @@ impl Client {
             Message::KeepAlive() => {
                 // Just a ping
             }
-            Message::Choke() => {
-                self.am_choked = true
-            }
-            Message::Unchoke() => {
-                self.am_choked = false
-            }
-            Message::Interested() => {
-                self.peer_intrested = true
-            }
-            Message::NotInterested() => {
-                self.peer_intrested = false
-            }
+            Message::Choke() => self.am_choked = true,
+            Message::Unchoke() => self.am_choked = false,
+            Message::Interested() => self.peer_intrested = true,
+            Message::NotInterested() => self.peer_intrested = false,
             Message::Have(index) => {
                 self.peer_have(index);
             }
@@ -97,8 +83,8 @@ impl Client {
             Message::Request(index, offset, length) => {
                 self.peer_requests.insert((index, offset, length));
             }
-            Message::Piece(index, offset, data) => {
-                self.pieces.insert((index, offset), data);
+            Message::Piece(index, offset, block) => {
+                self.blocks.insert((index, offset), block);
             }
             Message::Cancel(index, offset, length) => {
                 self.peer_requests.remove(&(index, offset, length));
@@ -106,9 +92,7 @@ impl Client {
             Message::Port(_) => {
                 // Not implemented
             }
-            _ => {
-                return Err(io::Error::new(io::ErrorKind::Other, "Unexpected message"))
-            }
+            _ => return Err(io::Error::new(io::ErrorKind::Other, "Unexpected message")),
         }
         Ok(())
     }
@@ -189,4 +173,3 @@ impl Service for Client {
         }))
     }
 }
-

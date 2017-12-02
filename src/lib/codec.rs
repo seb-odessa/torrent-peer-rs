@@ -35,7 +35,10 @@ const PORT_ID: u8 = 9;
 pub struct PeerCodec;
 impl PeerCodec {
     fn handshake(&self, buf: &mut BytesMut) -> Option<Message> {
-        //<PSTRLIN: u8><PSTR: 'BitTorrent protocol'><RESERVED[0u8; 8]><info_hash: [u8; 20]><peer_id: [u8; 20]>
+        //<PSTRLIN: u8><PSTR: 'BitTorrent protocol'>
+        //  <RESERVED[0u8; 8]>
+        //  <info_hash: [u8; 20]>
+        //  <peer_id: [u8; 20]>
         const HANDSHAKE_LENGTH: usize = BYTE_SIZE + PSTR_SIZE + RESERVED_LEN + HASH_INFO_LEN +
             PEER_ID_LEN;
 
