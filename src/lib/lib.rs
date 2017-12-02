@@ -1,4 +1,5 @@
 #![feature(const_size_of)]
+//#![feature(rustc_private)]
 
 extern crate bytes;
 extern crate futures;

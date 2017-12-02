@@ -5,6 +5,7 @@ use Message;
 use std::io;
 use std::net::SocketAddr;
 use std::collections::HashSet;
+use std::collections::HashMap;
 
 use futures::Future;
 use tokio_core::reactor::Handle;
@@ -14,25 +15,28 @@ use tokio_proto::TcpClient;
 use tokio_service::Service;
 use rustc_serialize::hex::ToHex;
 
+
 fn create<T: Into<String>>(msg: T) -> Result<Client, io::Error> {
     return Err(io::Error::new(io::ErrorKind::Other, msg.into()));
 }
 
-
 pub type ClientConnection = Box<Future<Item = Client, Error = io::Error>>;
-//pub type ClientResult = Box<Future<Item = (), Error = io::Error>>;
 
 pub struct Client {
     inner: Validate<ClientService<TcpStream, PeerProto>>,
     pub done: bool,
     pub am_choked: bool,
     pub am_intrested: bool,
+    pub am_have: HashSet<u32>,
     pub peer_choked: bool,
     pub peer_intrested: bool,
     pub peer_have: HashSet<u32>,
+    pub peer_requests: HashSet<(u32, u32, u32)>,
+    pub pieces: HashMap<(u32,u32), Vec<u8>>,
 }
 
 impl Client {
+
     pub fn connect(addr: &SocketAddr, handle: &Handle) -> ClientConnection {
         Box::new(TcpClient::new(PeerProto).connect(addr, handle).map(
             |service| {
@@ -41,9 +45,12 @@ impl Client {
                     done: false,
                     am_choked: true,
                     am_intrested: false,
+                    am_have: HashSet::new(),
                     peer_choked: true,
                     peer_intrested: false,
                     peer_have: HashSet::new(),
+                    peer_requests: HashSet::new(),
+                    pieces: HashMap::new(),
                 }
             },
         ))
@@ -66,27 +73,79 @@ impl Client {
 
     fn process(&mut self, msg: Message) -> Result<(), io::Error> {
         match msg {
-            Message::KeepAlive() => {}            
-            Message::Choke() => self.am_choked = true,
-            Message::Unchoke() => self.am_choked = false,
-            Message::Interested() => self.peer_intrested = true,
-            Message::NotInterested() => self.peer_intrested = false,            
-            Message::Have(index) => {
-                self.peer_have.insert(index);
+            Message::KeepAlive() => {
+                // Just a ping
             }
-            Message::Bitfield(_) => {} // Not implemented
-            Message::Request(_, _, _) => {
+            Message::Choke() => {
+                self.am_choked = true
+            }
+            Message::Unchoke() => {
+                self.am_choked = false
+            }
+            Message::Interested() => {
+                self.peer_intrested = true
+            }
+            Message::NotInterested() => {
+                self.peer_intrested = false
+            }
+            Message::Have(index) => {
+                self.peer_have(index);
+            }
+            Message::Bitfield(bits) => {
+                self.create_peer_have(bits);
+            }
+            Message::Request(index, offset, length) => {
+                self.peer_requests.insert((index, offset, length));
+            }
+            Message::Piece(index, offset, data) => {
+                self.pieces.insert((index, offset), data);
+            }
+            Message::Cancel(index, offset, length) => {
+                self.peer_requests.remove(&(index, offset, length));
+            }
+            Message::Port(_) => {
                 // Not implemented
-            } 
-            Message::Piece(_, _, _) => {
-                // Not implemented
-                self.done = true;
-            } 
-            Message::Cancel(_, _, _) => {} // Not implemented
-            Message::Port(_) => {} // Not implemented
-            _ => return Err(io::Error::new(io::ErrorKind::Other, "Unexpected message")),
+            }
+            _ => {
+                return Err(io::Error::new(io::ErrorKind::Other, "Unexpected message"))
+            }
         }
         Ok(())
+    }
+
+    fn create_peer_have(&mut self, bits: Vec<u8>) {
+        let mut index = 0;
+        for byte in &bits {
+            if 0 != *byte & 0b1000_0000u8 {
+                self.peer_have(index + 0);
+            }
+            if 0 != *byte & 0b0100_0000u8 {
+                self.peer_have(index + 1);
+            }
+            if 0 != *byte & 0b0010_0000u8 {
+                self.peer_have(index + 2);
+            }
+            if 0 != *byte & 0b0001_0000u8 {
+                self.peer_have(index + 3);
+            }
+            if 0 != *byte & 0b0000_1000u8 {
+                self.peer_have(index + 4);
+            }
+            if 0 != *byte & 0b0000_0100u8 {
+                self.peer_have(index + 5);
+            }
+            if 0 != *byte & 0b0000_0010u8 {
+                self.peer_have(index + 6);
+            }
+            if 0 != *byte & 0b0000_0001u8 {
+                self.peer_have(index + 7);
+            }
+            index += 8;
+        }
+    }
+
+    pub fn peer_have(&mut self, index: u32) {
+        self.peer_have.insert(index);
     }
 
     pub fn unchoke_me(mut self) -> ClientConnection {
@@ -130,3 +189,4 @@ impl Service for Client {
         }))
     }
 }
+
