@@ -12,7 +12,10 @@ name = "lib"
 path = "src/lib/lib.rs"
 
 [dependencies]
+log = "*"
+env_logger = "*"
 bytes = "*"
+rust-crypto = "*"
 futures = "*"
 tokio-io = "*"
 tokio-core = "*"

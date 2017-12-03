@@ -1,7 +1,12 @@
 #![feature(const_size_of)]
 //#![feature(rustc_private)]
 
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
 extern crate bytes;
+extern crate crypto;
 extern crate futures;
 extern crate tokio_io;
 extern crate tokio_core;
@@ -10,6 +15,7 @@ extern crate tokio_service;
 extern crate rustc_serialize;
 extern crate byteorder;
 
+pub mod hash;
 mod codec;
 mod proto;
 mod client;
@@ -18,7 +24,6 @@ mod echo_server;
 
 pub use codec::PeerCodec;
 pub use proto::PeerProto;
-
 pub use validate::Validate;
 pub use client::Client;
 pub use echo_server::Echo;
