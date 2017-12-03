@@ -2,7 +2,7 @@
 extern crate log;
 extern crate env_logger;
 extern crate futures;
-extern crate lib;
+extern crate torrent_peer;
 extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_proto;
@@ -15,15 +15,12 @@ use std::net::SocketAddr;
 use std::collections::HashSet;
 use std::collections::HashMap;
 
-//use tokio_proto::TcpServer;
 use tokio_core::reactor::Core;
 use rustc_serialize::hex::FromHex;
 use rustc_serialize::hex::ToHex;
 
-use lib::hash::sha1;
-//use lib::Echo;
-//use lib::PeerProto;
-use lib::Client;
+use torrent_peer::hash::sha1;
+use torrent_peer::Client;
 
 const CHUNK_LEN: u32 = 16384;
 const TRIES_TO_UNCHOKE: u8 = 5;

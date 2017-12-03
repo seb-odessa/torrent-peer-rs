@@ -1,7 +1,7 @@
 #![feature(const_size_of)]
 //#![feature(rustc_private)]
 
-#[macro_use]
+//#[macro_use]
 extern crate log;
 extern crate env_logger;
 
