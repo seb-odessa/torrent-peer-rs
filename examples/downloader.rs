@@ -23,30 +23,44 @@ use torrent_peer::hash::sha1;
 use torrent_peer::Client;
 
 const BLOCK_LEN: u32 = 16384;
-const TRIES_TO_UNCHOKE: u8 = 5;
 
-struct PieceHandler {
-    pub address: SocketAddr,
-    pub info_hash: Vec<u8>,
+pub struct Downloader {
+    address: SocketAddr,
+    info_hash: Vec<u8>,
     piece_len: usize,
     piece_count: usize,
     requests: HashSet<(u32, u32, u32)>,
     blocks: HashMap<(u32, u32), Vec<u8>>,
 }
-impl PieceHandler {
-    pub fn new(addr: SocketAddr, hash: Vec<u8>, total: usize, piece: usize) -> Self {
-        Self {
+impl Downloader {
+    pub fn new(
+        ip: String,
+        port: u16,
+        hash: Vec<u8>,
+        total: usize,
+        piece: usize,
+    ) -> Result<Self, io::Error> {
+        let addr = format!("{}:{}", ip, port).parse().map_err(|e| {
+            io::Error::new(io::ErrorKind::Other, format!("{}", e))
+        })?;
+        Ok(Self {
             address: addr,
             info_hash: hash,
             piece_len: piece,
             piece_count: (total / piece + !!(total % piece)),
             requests: HashSet::new(),
             blocks: HashMap::new(),
-        }
+        })
     }
 
-    pub fn add_index(&mut self, index: u32) {
-        info!("PieceHandler.add_index({})", index);
+    /// returns true if request queue is empty or false otherwise
+    pub fn is_done(&self) -> bool {
+        self.requests.is_empty()
+    }
+
+    /// enqueue piece index to downloader
+    pub fn enqueue_index(&mut self, index: u32) {
+        info!("Downloader.enqueue_index({})", index);
         if self.piece_count < index as usize {
             return;
         }
@@ -54,7 +68,7 @@ impl PieceHandler {
         let mut piece = self.piece_len as u32;
         while piece > BLOCK_LEN {
             info!(
-                "PieceHandler.requests.insert({}, {}, {})",
+                "Downloader.requests.insert({}, {}, {})",
                 index,
                 offset,
                 BLOCK_LEN
@@ -65,7 +79,7 @@ impl PieceHandler {
         }
         if piece > 0 {
             info!(
-                "PieceHandler::.requests.insert({}, {}, {})",
+                "Downloader.requests.insert({}, {}, {})",
                 index,
                 offset,
                 piece
@@ -74,13 +88,23 @@ impl PieceHandler {
         }
     }
 
-    pub fn load_blocks(&mut self, blocks: &HashMap<(u32, u32), Vec<u8>>) {
+    /// get vector of received indices
+    pub fn get_indices(&self) -> Vec<u32> {
+        self.blocks
+            .iter()
+            .map(|(&(idx, _), _)| idx)
+            .collect::<Vec<u32>>()
+    }
+
+    /// load pieces from client into own storage
+    fn load(&mut self, blocks: &HashMap<(u32, u32), Vec<u8>>) {
         for (&(index, offset), block) in blocks.iter() {
             self.blocks.insert((index, offset), block.clone());
         }
     }
 
-    pub fn request(&mut self) -> Option<(u32, u32, u32)> {
+    /// pop request from queue and return it to the caller
+    fn get_request(&mut self) -> Option<(u32, u32, u32)> {
         if let Some(&request) = self.requests.iter().next() {
             self.requests.remove(&request);
             return Some(request);
@@ -88,6 +112,7 @@ impl PieceHandler {
         None
     }
 
+    /// returns vector of u8 with content of the piece by index
     pub fn get_piece(&mut self, index: u32) -> Option<Vec<u8>> {
         let mut piece = Vec::new();
         let mut offset = 0;
@@ -95,61 +120,50 @@ impl PieceHandler {
             piece.append(block);
             offset += BLOCK_LEN;
         }
-        if piece.len() > 0 { Some(piece) } else { None }
-    }
-}
-
-
-fn download(desc: &mut PieceHandler) -> Result<(), io::Error> {
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-    let id = "-01-TORRENT-PEER-RS-".as_bytes();
-
-    let mut client = core.run(Client::connect(&desc.address, &handle))?;
-    client = core.run(client.handshake(desc.info_hash.clone(), id))?;
-    client = core.run(client.ping())?;
-
-    let mut attempts = TRIES_TO_UNCHOKE;
-    loop {
-        if 0 == attempts {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Attempt limit exceeded",
-            ));
-        }
-        if desc.requests.is_empty() {
-            break;
-        }
-        if client.peer_choked && client.peer_intrested {
-            client = core.run(client.unchoke_peer())?;
-        }
-        if client.am_choked {
-            client = core.run(client.unchoke_me())?;
-            attempts -= 1;
+        if offset as usize == self.piece_len {
+            Some(piece)
         } else {
-            attempts = TRIES_TO_UNCHOKE;
-            if let Some(request) = desc.request() {
-                client = core.run(client.request(request.0, request.1, request.2))?;
+            None
+        }
+    }
+
+    /// invoke downloader to get all queued indexes
+    fn invoke(&mut self, id: &str, mut attempts: u8) -> Result<(), io::Error> {
+        let mut core = Core::new().unwrap();
+        let handle = core.handle();
+        let info = self.info_hash.clone();
+
+        let mut client = core.run(Client::connect(&self.address, &handle))?;
+        client = core.run(client.handshake(info, id.as_bytes()))?;
+        client = core.run(client.ping())?;
+        while !self.is_done() {
+            if 0 == attempts {
+                use io::Error;
+                use io::ErrorKind::Other;
+                return Err(Error::new(Other, "Attempt limit exceeded"));
+            }
+            if client.peer_choked && client.peer_intrested {
+                client = core.run(client.unchoke_peer())?;
+            }
+            if client.am_choked {
+                client = core.run(client.unchoke_me())?;
+                attempts -= 1;
+            } else {
+                attempts += 1;
+                if let Some(request) = self.get_request() {
+                    client = core.run(client.request(request.0, request.1, request.2))?;
+                }
             }
         }
+        self.load(&client.blocks);
+        Ok(())
     }
-    desc.load_blocks(&client.blocks);
-    Ok(())
 }
 
-fn create_addr(host: String, port: String) -> Result<SocketAddr, io::Error> {
-    let uri = format!("{}:{}", host, port);
-    uri.parse().map_err(|e| {
-        io::Error::new(io::ErrorKind::Other, format!("{}", e))
-    })
-}
-
-// ;
 fn main() {
     env_logger::init().unwrap();
     let mut args = env::args().collect::<Vec<_>>();
     if args.len() == 1 {
-        //5E433EDAE53E68AF02BC2650E057D0FC4FE41FCD
         println!(
             "Usage:\n\t{} {} {} {} {} {} {}...",
             args[0],
@@ -160,40 +174,31 @@ fn main() {
             "524288",
             "1"
         );
-    // let address = "127.0.0.1:12345".parse().unwrap();
-    // println!("Server in debug mode started on {}", &address);
-    // let server = TcpServer::new(PeerProto, address);
-    // server.serve(|| Ok(Echo));
     } else {
         args.reverse();
         args.pop();
         let host = args.pop().unwrap();
-        let port = args.pop().unwrap();
-        let hash = args.pop().unwrap();
+        let port = args.pop().unwrap().parse::<u16>().unwrap();
+        let hash = args.pop().unwrap().as_str().from_hex().unwrap();
         let total_len = args.pop().unwrap().parse::<usize>().unwrap();
         let piece_len = args.pop().unwrap().parse::<usize>().unwrap();
+        let mut dl = Downloader::new(host, port, hash, total_len, piece_len).unwrap();
 
-        let address = create_addr(host, port).unwrap();
-        let hash_info = hash.as_str().from_hex().unwrap();
-        let mut desc = PieceHandler::new(address, hash_info, total_len, piece_len);
-
-        let mut indices = Vec::new();
         while let Some(index) = args.pop() {
             if let Some(index) = index.parse::<u32>().ok() {
-                indices.push(index);
-                desc.add_index(index);
+                dl.enqueue_index(index);
             }
         }
-        match download(&mut desc) {
+
+        match dl.invoke("-01-TORRENT-PEER-RS-", 2) {
             Ok(_) => {}
             Err(e) => println!("{}", e),
         }
-        for index in &indices {
-            if let Some(piece) = desc.get_piece(*index) {
 
+        for index in dl.get_indices() {
+            if let Some(piece) = dl.get_piece(index) {
                 println!("{}", sha1(&piece).to_hex());
             }
         }
-
     }
 }
