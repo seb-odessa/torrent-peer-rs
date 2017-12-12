@@ -4,7 +4,6 @@ use std::mem::size_of;
 
 use bytes::BytesMut;
 use tokio_io::codec::{Encoder, Decoder};
-// use rustc_serialize::hex::ToHex;
 use byteorder::{ByteOrder, BigEndian};
 
 use Message;
