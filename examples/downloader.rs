@@ -165,10 +165,9 @@ fn main() {
     let mut args = env::args().collect::<Vec<_>>();
     if args.len() == 1 {
         println!(
-            "Usage:\n\t{} {} {} {} {} {} {}...",
+            "Usage:\n\t{} {} {} {} {} {}...",
             args[0],
-            "192.168.0.100",
-            "6881",
+            "192.168.0.100:6881",
             "5E433EDAE53E68AF02BC2650E057D0FC4FE41FCD",
             "924600668",
             "524288",
@@ -177,8 +176,10 @@ fn main() {
     } else {
         args.reverse();
         args.pop();
-        let host = args.pop().unwrap();
-        let port = args.pop().unwrap().parse::<u16>().unwrap();
+        let address = args.pop().unwrap();
+        let target: Vec<_> = address.split(':').collect();
+        let host = target[0].to_string();
+        let port = target[1].parse::<u16>().unwrap();
         let hash = args.pop().unwrap().as_str().from_hex().unwrap();
         let total_len = args.pop().unwrap().parse::<usize>().unwrap();
         let piece_len = args.pop().unwrap().parse::<usize>().unwrap();
