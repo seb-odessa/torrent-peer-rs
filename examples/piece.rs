@@ -107,8 +107,6 @@ fn download(desc: &mut PieceHandler) -> Result<(), io::Error> {
 
     let mut client = core.run(Client::connect(&desc.address, &handle))?;
     client = core.run(client.handshake(desc.info_hash.clone(), id))?;
-    client = core.run(client.ping())?;
-
     let mut attempts = TRIES_TO_UNCHOKE;
     loop {
         if 0 == attempts {

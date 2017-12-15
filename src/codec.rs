@@ -81,6 +81,7 @@ impl PeerCodec {
         // have: <len=0005><id=4><index>
         if buf.len() >= NUMBER_SIZE {
             let index = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE));
+            println!("Msg Have index {}", index);
             Some(Message::Have(index))
         } else {
             None

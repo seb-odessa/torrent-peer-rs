@@ -135,7 +135,6 @@ impl Downloader {
 
         let mut client = core.run(Client::connect(&self.address, &handle))?;
         client = core.run(client.handshake(info, id.as_bytes()))?;
-        client = core.run(client.ping())?;
         while !self.is_done() {
             if 0 == attempts {
                 use io::Error;
@@ -145,6 +144,7 @@ impl Downloader {
             if client.peer_choked && client.peer_intrested {
                 client = core.run(client.unchoke_peer())?;
             }
+
             if client.am_choked {
                 client = core.run(client.unchoke_me())?;
                 attempts -= 1;
