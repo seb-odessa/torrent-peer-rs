@@ -41,7 +41,7 @@ impl PeerCodec {
         const HANDSHAKE_LENGTH: usize = BYTE_SIZE + PSTR_SIZE + RESERVED_LEN + HASH_INFO_LEN +
             PEER_ID_LEN;
 
-        if HANDSHAKE_LENGTH == buf.len() && buf[0] as usize == PSTR_SIZE &&
+        if HANDSHAKE_LENGTH <= buf.len() && buf[0] as usize == PSTR_SIZE &&
             &buf[1..(PSTR_SIZE + BYTE_SIZE) as usize] == PSTR.as_bytes()
         {
             let mut hash_info = Vec::with_capacity(HASH_INFO_LEN);
@@ -149,7 +149,8 @@ impl Decoder for PeerCodec {
     type Error = io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Message>> {
-        //        println!("PeerCodec::decode() <= {:?}", &buf);
+        println!("Decoder::decode() <= {:?}", &buf);
+        let buf_len = buf.len();
         if buf.is_empty() {
             Ok(None)
         } else if let Some(handshake) = self.handshake(buf) {
@@ -158,6 +159,11 @@ impl Decoder for PeerCodec {
             Ok(None)
         } else {
             let msg_len = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE)) as usize;
+            println!(
+                "Decoder::decode(), buf_len = {}, msg_len = {}",
+                buf_len,
+                msg_len
+            );
             if 0 == msg_len {
                 Ok(Some(Message::KeepAlive()))
             } else {
@@ -183,7 +189,6 @@ impl Encoder for PeerCodec {
     type Error = io::Error;
 
     fn encode(&mut self, msg: Message, buf: &mut BytesMut) -> io::Result<()> {
-        // println!("PeerCodec::encode() <= {:?}", &msg);
         match msg {
             Message::Handshake(hash_info, peer_id) => {
                 if hash_info.len() != HASH_INFO_LEN {
@@ -272,6 +277,7 @@ impl Encoder for PeerCodec {
             }
         }
         // println!("PeerCodec::encode() => {:?}", &buf);
+        println!("Encoder::encode() => {:?}", &buf);
         Ok(())
     }
 }

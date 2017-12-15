@@ -166,9 +166,9 @@ impl Service for Client {
     type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, request: Self::Request) -> Self::Future {
-        // println!("Client: Request to Server: {:?}", request);
+        println!("Client: Request to Server: {:?}", request);
         Box::new(self.inner.call(request).and_then(|response| {
-            // println!("Client: Response from Server: {:?}", response);
+            println!("Client: Response from Server: {:?}", response);
             Ok(response)
         }))
     }
