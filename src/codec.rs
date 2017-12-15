@@ -7,6 +7,7 @@ use tokio_io::codec::{Encoder, Decoder};
 use byteorder::{ByteOrder, BigEndian};
 
 use Message;
+use Messages;
 
 const PSTR: &'static str = "BitTorrent protocol";
 const PSTR_SIZE: usize = 19;
@@ -146,18 +147,19 @@ impl PeerCodec {
     }
 }
 impl Decoder for PeerCodec {
-    type Item = Message;
+    type Item = Messages;
     type Error = io::Error;
 
-    fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Message>> {
+    fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Messages>> {
+        let mut messages = Messages::new();
         println!("Decoder::decode() <= {:?}", &buf);
         let buf_len = buf.len();
         if buf.is_empty() {
-            Ok(None)
+            messages.push_back(None);
         } else if let Some(handshake) = self.handshake(buf) {
-            Ok(Some(handshake))
+            messages.push_back(Some(handshake));
         } else if buf.len() < NUMBER_SIZE || BigEndian::read_u32(&buf) > buf.len() as u32 {
-            Ok(None)
+            messages.push_back(None);
         } else {
             let msg_len = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE)) as usize;
             println!(
@@ -165,24 +167,26 @@ impl Decoder for PeerCodec {
                 buf_len,
                 msg_len
             );
-            if 0 == msg_len {
-                Ok(Some(Message::KeepAlive()))
+            let msg = if 0 == msg_len {
+                Some(Message::KeepAlive())
             } else {
                 match buf.split_to(1)[0] {
-                    CHOCKE_ID => Ok(self.choke()),
-                    UNCHOCKE_ID => Ok(self.unchoke()),
-                    INTERESTED_ID => Ok(self.interested()),
-                    NOT_INTERESTED_ID => Ok(self.not_interested()),
-                    HAVE_ID => Ok(self.have(buf)),
-                    BITFIELD_ID => Ok(self.bitfield(buf, msg_len)),
-                    REQUEST_ID => Ok(self.request(buf)),
-                    PIECE_ID => Ok(self.piece(buf, msg_len)),
-                    CANCEL_ID => Ok(self.cancel(buf)),
-                    PORT_ID => Ok(self.port(buf)),
-                    _ => Ok(None),
+                    CHOCKE_ID => self.choke(),
+                    UNCHOCKE_ID => self.unchoke(),
+                    INTERESTED_ID => self.interested(),
+                    NOT_INTERESTED_ID => self.not_interested(),
+                    HAVE_ID => self.have(buf),
+                    BITFIELD_ID => self.bitfield(buf, msg_len),
+                    REQUEST_ID => self.request(buf),
+                    PIECE_ID => self.piece(buf, msg_len),
+                    CANCEL_ID => self.cancel(buf),
+                    PORT_ID => self.port(buf),
+                    _ => None,
                 }
-            }
+            };
+            messages.push_back(msg);
         }
+        Ok(Some(messages))
     }
 }
 impl Encoder for PeerCodec {

@@ -26,7 +26,10 @@ pub use client::Client;
 pub use echo_server::Echo;
 
 use std::fmt;
+use std::collections::LinkedList;
 use rustc_serialize::hex::ToHex;
+
+pub type Messages = LinkedList<Option<Message>>;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Message {

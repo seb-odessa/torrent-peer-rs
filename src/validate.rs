@@ -3,6 +3,7 @@ use tokio_service::{Service, NewService};
 use futures::Future;
 //use futures::future;
 use Message;
+use Messages;
 
 //const ERROR_MESSAGE: &'static str = "Was found malformed message";
 
@@ -18,21 +19,17 @@ impl<T> Validate<T> {
 
 impl<T> Service for Validate<T>
 where
-    T: Service<Request = Message, Response = Message, Error = io::Error>,
+    T: Service<Request = Message, Response = Messages, Error = io::Error>,
     T::Future: 'static,
 {
     type Request = Message;
-    type Response = Message;
+    type Response = Messages;
     type Error = io::Error;
-    type Future = Box<Future<Item = Message, Error = io::Error>>;
+    type Future = Box<Future<Item = Messages, Error = io::Error>>;
 
 
     fn call(&self, req: Message) -> Self::Future {
-        println!("Request: {}", &req);
-        Box::new(self.inner.call(req).and_then(|resp| {
-            println!("Response: {}", &resp);
-            Ok(resp)
-        }))
+        Box::new(self.inner.call(req))
     }
 }
 
@@ -40,13 +37,13 @@ impl<T> NewService for Validate<T>
 where
     T: NewService<
         Request = Message,
-        Response = Message,
+        Response = Messages,
         Error = io::Error,
     >,
     <T::Instance as Service>::Future: 'static,
 {
     type Request = Message;
-    type Response = Message;
+    type Response = Messages;
     type Error = io::Error;
     type Instance = Validate<T::Instance>;
 
