@@ -1,6 +1,7 @@
-use std::io;
 use std::str;
 use std::mem::size_of;
+use std::{io, thread};
+use std::time::Duration;
 
 use bytes::BytesMut;
 use tokio_io::codec::{Encoder, Decoder};
@@ -34,11 +35,11 @@ const PORT_ID: u8 = 9;
 
 
 pub struct PeerCodec {
-    guard: Mutex<u8>,
+    complete: Mutex<bool>,
 }
 impl PeerCodec {
     pub fn new() -> Self {
-        PeerCodec { guard: Mutex::new(0) }
+        PeerCodec { complete: Mutex::new(true) }
     }
     fn handshake(&self, buf: &mut BytesMut) -> Option<Message> {
         //<PSTRLIN: u8><PSTR: 'BitTorrent protocol'>
@@ -194,6 +195,7 @@ impl Decoder for PeerCodec {
                 messages.push_back(msg);
             }
         }
+        *self.complete.lock().unwrap() = buf.is_empty();
         println!("Decoder::decode() messages.len(): {}", messages.len());
         if messages.len() == 1 && messages.front().unwrap().is_none() {
             Ok(None)
@@ -210,6 +212,9 @@ impl Encoder for PeerCodec {
     type Error = io::Error;
 
     fn encode(&mut self, msg: Message, buf: &mut BytesMut) -> io::Result<()> {
+        while !*self.complete.lock().unwrap() {
+            thread::sleep(Duration::from_millis(100));
+        }
         match msg {
             Message::Handshake(hash_info, peer_id) => {
                 if hash_info.len() != HASH_INFO_LEN {

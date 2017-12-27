@@ -135,7 +135,6 @@ impl Downloader {
 
         let mut client = core.run(Client::connect(&self.address, &handle))?;
         client = core.run(client.handshake(info, id.as_bytes()))?;
-        client.dispatch()?;
         client = core.run(client.ping())?;
         while !self.is_done() {
             if 0 == attempts {
@@ -152,7 +151,7 @@ impl Downloader {
                 attempts -= 1;
             } else {
                 attempts += 1;
-                if let Some(requlest) = self.get_request() {
+                if let Some(request) = self.get_request() {
                     client = core.run(client.request(request.0, request.1, request.2))?;
                 }
             }
