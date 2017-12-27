@@ -29,6 +29,7 @@ pub struct Client {
     pub peer_requests: HashSet<(u32, u32, u32)>,
     pub blocks: HashMap<(u32, u32), Vec<u8>>,
     pub messages: Messages,
+    pub info_hash: Vec<u8>,
 }
 
 impl Client {
@@ -45,49 +46,45 @@ impl Client {
                     peer_requests: HashSet::new(),
                     blocks: HashMap::new(),
                     messages: Messages::new(),
+                    info_hash: Vec::new(),
                 }
             },
         ))
     }
 
-    pub fn handshake(mut self, hash_info: Vec<u8>, id: &[u8]) -> ClientConnection {
-        let msg = Message::Handshake(hash_info.clone(), Vec::from(id));
+    pub fn handshake(mut self, info_hash: Vec<u8>, id: &[u8]) -> ClientConnection {
+        self.info_hash = info_hash.clone();
+        let msg = Message::Handshake(info_hash, Vec::from(id));
         Box::new(self.call(msg).and_then(
-            |msgs| self.dispatch(msgs).and(Ok(self)),
+            |msgs| self.enqueue(msgs).and(Ok(self)),
         ))
     }
 
-    fn dispatch(&mut self, mut messages: Messages) -> Result<(), io::Error> {
+    fn enqueue(&mut self, mut messages: Messages) -> Result<(), io::Error> {
         self.messages.append(&mut messages);
+        self.dispatch()
+    }
+
+    pub fn dispatch(&mut self) -> Result<(), io::Error> {
+        println!("client::dispatch() START");
         while let Some(message) = self.messages.pop_front() {
             if let Some(msg) = message {
                 self.process(msg)?;
             }
         }
+        println!("client::dispatch() END");
         Ok(())
     }
-
-    // pub fn handshake(self, hash_info: Vec<u8>, id: &[u8]) -> ClientConnection {
-    //     let result = self.call(Message::Handshake(hash_info.clone(), Vec::from(id)))
-    //         .and_then(move |response| match response {
-    //             Message::Handshake(hash, _) => {
-    //                 if hash == hash_info {
-    //                     Ok(self)
-    //                 } else {
-    //                     return Err(io::Error::new(
-    //                         io::ErrorKind::Other,
-    //                         format!("expected {:?}", hash_info.to_hex()).as_str(),
-    //                     ));
-    //                 }
-    //             }
-    //             _ => return Err(io::Error::new(io::ErrorKind::Other, "Unexpected response")),
-    //         });
-    //     Box::new(result)
-    // }
 
     fn process(&mut self, msg: Message) -> Result<(), io::Error> {
         println!("Client::process() <= {}", msg);
         match msg {
+            Message::Handshake(info_hash, _) => {
+                if self.info_hash != info_hash {
+                    return Err(io::Error::new(io::ErrorKind::Other, "Unexpected INFO hash"));
+                }
+            }
+
             Message::KeepAlive() => {
                 // Just a ping
             }
@@ -113,7 +110,7 @@ impl Client {
             Message::Port(_) => {
                 // Not implemented
             }
-            _ => return Err(io::Error::new(io::ErrorKind::Other, "Unexpected message")),
+            //_ => return Err(io::Error::new(io::ErrorKind::Other, "Unexpected message")),
         }
         Ok(())
     }
@@ -155,27 +152,27 @@ impl Client {
 
     pub fn unchoke_me(mut self) -> ClientConnection {
         Box::new(self.call(Message::Interested()).and_then(|msgs| {
-            self.dispatch(msgs).and(Ok(self))
+            self.enqueue(msgs).and(Ok(self))
         }))
     }
 
     pub fn unchoke_peer(mut self) -> ClientConnection {
         Box::new(self.call(Message::Unchoke()).and_then(|msgs| {
-            self.dispatch(msgs).and(Ok(self))
+            self.enqueue(msgs).and(Ok(self))
         }))
     }
 
     pub fn request(mut self, index: u32, offset: u32, size: u32) -> ClientConnection {
         Box::new(self.call(Message::Request(index, offset, size)).and_then(
             |msgs| {
-                self.dispatch(msgs).and(Ok(self))
+                self.enqueue(msgs).and(Ok(self))
             },
         ))
     }
 
     pub fn ping(mut self) -> ClientConnection {
         Box::new(self.call(Message::KeepAlive()).and_then(|msgs| {
-            self.dispatch(msgs).and(Ok(self))
+            self.enqueue(msgs).and(Ok(self))
         }))
     }
 }

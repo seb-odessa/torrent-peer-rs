@@ -15,7 +15,7 @@ impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for PeerProto {
     type Transport = Framed<T, PeerCodec>;
     type BindTransport = Result<Self::Transport, io::Error>;
     fn bind_transport(&self, io: T) -> Self::BindTransport {
-        Ok(io.framed(PeerCodec))
+        Ok(io.framed(PeerCodec::new()))
     }
 }
 
@@ -25,6 +25,6 @@ impl<T: AsyncRead + AsyncWrite + 'static> ClientProto<T> for PeerProto {
     type Transport = Framed<T, PeerCodec>;
     type BindTransport = Result<Self::Transport, io::Error>;
     fn bind_transport(&self, io: T) -> Self::BindTransport {
-        Ok(io.framed(PeerCodec))
+        Ok(io.framed(PeerCodec::new()))
     }
 }

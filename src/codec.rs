@@ -5,6 +5,7 @@ use std::mem::size_of;
 use bytes::BytesMut;
 use tokio_io::codec::{Encoder, Decoder};
 use byteorder::{ByteOrder, BigEndian};
+use std::sync::Mutex;
 
 use Message;
 use Messages;
@@ -32,8 +33,13 @@ const CANCEL_ID: u8 = 8;
 const PORT_ID: u8 = 9;
 
 
-pub struct PeerCodec;
+pub struct PeerCodec {
+    guard: Mutex<u8>,
+}
 impl PeerCodec {
+    pub fn new() -> Self {
+        PeerCodec { guard: Mutex::new(0) }
+    }
     fn handshake(&self, buf: &mut BytesMut) -> Option<Message> {
         //<PSTRLIN: u8><PSTR: 'BitTorrent protocol'>
         //  <RESERVED[0u8; 8]>
@@ -153,7 +159,6 @@ impl Decoder for PeerCodec {
     fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Messages>> {
         let mut messages = Messages::new();
         println!("Decoder::decode() <= {:?}", &buf);
-        let buf_len = buf.len();
         if buf.is_empty() {
             messages.push_back(None);
         } else if let Some(handshake) = self.handshake(buf) {
@@ -161,32 +166,43 @@ impl Decoder for PeerCodec {
         } else if buf.len() < NUMBER_SIZE || BigEndian::read_u32(&buf) > buf.len() as u32 {
             messages.push_back(None);
         } else {
-            let msg_len = BigEndian::read_u32(&buf.split_to(NUMBER_SIZE)) as usize;
-            println!(
-                "Decoder::decode(), buf_len = {}, msg_len = {}",
-                buf_len,
-                msg_len
-            );
-            let msg = if 0 == msg_len {
-                Some(Message::KeepAlive())
-            } else {
-                match buf.split_to(1)[0] {
-                    CHOCKE_ID => self.choke(),
-                    UNCHOCKE_ID => self.unchoke(),
-                    INTERESTED_ID => self.interested(),
-                    NOT_INTERESTED_ID => self.not_interested(),
-                    HAVE_ID => self.have(buf),
-                    BITFIELD_ID => self.bitfield(buf, msg_len),
-                    REQUEST_ID => self.request(buf),
-                    PIECE_ID => self.piece(buf, msg_len),
-                    CANCEL_ID => self.cancel(buf),
-                    PORT_ID => self.port(buf),
-                    _ => None,
-                }
-            };
-            messages.push_back(msg);
+            let msg_len = BigEndian::read_u32(&buf) as usize;
+            while buf.len() > msg_len {
+                println!(
+                    "Decoder::decode(): buf.len() = {}, msg_len = {}",
+                    buf.len(),
+                    msg_len
+                );
+                buf.split_to(NUMBER_SIZE); // pop message length value
+                let msg = if 0 == msg_len {
+                    Some(Message::KeepAlive())
+                } else {
+                    match buf.split_to(1)[0] {
+                        CHOCKE_ID => self.choke(),
+                        UNCHOCKE_ID => self.unchoke(),
+                        INTERESTED_ID => self.interested(),
+                        NOT_INTERESTED_ID => self.not_interested(),
+                        HAVE_ID => self.have(buf),
+                        BITFIELD_ID => self.bitfield(buf, msg_len),
+                        REQUEST_ID => self.request(buf),
+                        PIECE_ID => self.piece(buf, msg_len),
+                        CANCEL_ID => self.cancel(buf),
+                        PORT_ID => self.port(buf),
+                        _ => None,
+                    }
+                };
+                messages.push_back(msg);
+            }
         }
-        Ok(Some(messages))
+        println!("Decoder::decode() messages.len(): {}", messages.len());
+        if messages.len() == 1 && messages.front().unwrap().is_none() {
+            Ok(None)
+        } else {
+            for msg in &messages {
+                println!("Decoder::decode() msg: {:?}", msg);
+            }
+            Ok(Some(messages))
+        }
     }
 }
 impl Encoder for PeerCodec {
