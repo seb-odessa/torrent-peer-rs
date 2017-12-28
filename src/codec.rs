@@ -167,21 +167,21 @@ impl Decoder for PeerCodec {
             while buf.len() >= size_of::<u32>() {
                 println!("Decoder::decode(): buf.len(): {}", buf.len());
                 let payload_length = BigEndian::read_u32(&buf) as usize;
-                println!("Decoder::decode(): payload_length: {}", payload_length);
+                // println!("Decoder::decode(): payload_length: {}", payload_length);
                 let message_length = size_of::<u32>() + payload_length;
-                println!("Decoder::decode(): message_length: {}", message_length);
+                // println!("Decoder::decode(): message_length: {}", message_length);
                 if buf.len() < message_length {
                     //println!("Decoder::decode(): rest of buf: {}", buf.to_hex());
                     break;
                 }
-                println!(
-                    "Decoder::decode(): msg: {} ",
-                    buf[0..message_length].to_hex()
-                );
+                // println!(
+                //     "Decoder::decode(): msg: {} ",
+                //     buf[0..message_length].to_hex()
+                // );
 
                 buf.split_to(size_of::<u32>()); // consume payload length
 
-                thread::sleep(Duration::from_millis(30));
+                //thread::sleep(Duration::from_millis(30));
                 if 0 == payload_length {
                     messages.push_back(Some(Message::KeepAlive()));
                 } else if buf.len() >= payload_length {
@@ -208,9 +208,9 @@ impl Decoder for PeerCodec {
             }
         }
         println!("Decoder::decode() messages.len(): {}", messages.len());
-        for msg in &messages {
-            println!("Decoder::decode() msg: {:?}", msg);
-        }
+        // for msg in &messages {
+        //     println!("Decoder::decode() msg: {:?}", msg);
+        // }
         if messages.is_empty() {
             Ok(None)
         } else {

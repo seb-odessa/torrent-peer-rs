@@ -100,6 +100,7 @@ impl Downloader {
     /// load pieces from client into own storage
     fn load(&mut self, blocks: &HashMap<(u32, u32), Vec<u8>>) {
         for (&(index, offset), block) in blocks.iter() {
+            self.requests.remove(&(index, offset, block.len() as u32));
             self.blocks.insert((index, offset), block.clone());
         }
     }
@@ -107,7 +108,6 @@ impl Downloader {
     /// pop request from queue and return it to the caller
     fn get_request(&mut self) -> Option<(u32, u32, u32)> {
         if let Some(&request) = self.requests.iter().next() {
-            self.requests.remove(&request);
             return Some(request);
         }
         None
@@ -167,10 +167,11 @@ impl Downloader {
                 attempts += 1;
                 if let Some(request) = self.get_request() {
                     client = core.run(client.request(request.0, request.1, request.2))?;
+                    self.load(&client.blocks);
                 }
             }
         }
-        self.load(&client.blocks);
+
         Ok(())
     }
 }
