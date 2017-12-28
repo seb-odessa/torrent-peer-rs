@@ -156,6 +156,13 @@ impl Client {
         }))
     }
 
+    pub fn choke_me(mut self) -> ClientConnection {
+        Box::new(self.call(Message::NotInterested()).and_then(|msgs| {
+            self.enqueue(msgs).and(Ok(self))
+        }))
+    }
+
+
     pub fn unchoke_peer(mut self) -> ClientConnection {
         Box::new(self.call(Message::Unchoke()).and_then(|msgs| {
             self.enqueue(msgs).and(Ok(self))
@@ -168,6 +175,12 @@ impl Client {
                 self.enqueue(msgs).and(Ok(self))
             },
         ))
+    }
+
+    pub fn bitfield(mut self) -> ClientConnection {
+        Box::new(self.call(Message::Bitfield(Vec::new())).and_then(|msgs| {
+            self.enqueue(msgs).and(Ok(self))
+        }))
     }
 
     pub fn ping(mut self) -> ClientConnection {

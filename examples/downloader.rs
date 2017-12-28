@@ -15,6 +15,7 @@ use std::net::SocketAddr;
 use std::collections::HashSet;
 use std::collections::HashMap;
 
+use futures::Future;
 use tokio_core::reactor::Core;
 use rustc_serialize::hex::FromHex;
 use rustc_serialize::hex::ToHex;
@@ -134,6 +135,19 @@ impl Downloader {
         let info = self.info_hash.clone();
 
         let mut client = core.run(Client::connect(&self.address, &handle))?;
+
+        // core.run(client.handshake(info, id.as_bytes()).and_then(|c| {
+        //     c.unchoke_me().and_then(|c| if c.am_choked {
+        //         c.unchoke_me()
+        //     } else {
+        //         if let Some(request) = self.get_request() {
+        //             c.request(request.0, request.1, request.2)
+        //         } else {
+        //             c.choke_me()
+        //         }
+        //     })
+        // }));
+
         client = core.run(client.handshake(info, id.as_bytes()))?;
         client = core.run(client.ping())?;
         while !self.is_done() {

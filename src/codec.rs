@@ -1,12 +1,14 @@
+use std::io;
 use std::str;
 use std::mem::size_of;
-use std::{io, thread};
+use rustc_serialize::hex::ToHex;
+
+use std::thread;
 use std::time::Duration;
 
 use bytes::BytesMut;
 use tokio_io::codec::{Encoder, Decoder};
 use byteorder::{ByteOrder, BigEndian};
-use std::sync::Mutex;
 
 use Message;
 use Messages;
@@ -34,13 +36,8 @@ const CANCEL_ID: u8 = 8;
 const PORT_ID: u8 = 9;
 
 
-pub struct PeerCodec {
-    complete: Mutex<bool>,
-}
+pub struct PeerCodec;
 impl PeerCodec {
-    pub fn new() -> Self {
-        PeerCodec { complete: Mutex::new(true) }
-    }
     fn handshake(&self, buf: &mut BytesMut) -> Option<Message> {
         //<PSTRLIN: u8><PSTR: 'BitTorrent protocol'>
         //  <RESERVED[0u8; 8]>
@@ -159,50 +156,64 @@ impl Decoder for PeerCodec {
 
     fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Messages>> {
         let mut messages = Messages::new();
-        println!("Decoder::decode() <= {:?}", &buf);
+        if buf.len() < 200 {
+            println!("Decoder::decode() <= '{}'", &buf.to_hex());
+        }
         if buf.is_empty() {
-            messages.push_back(None);
+            return Ok(None);
         } else if let Some(handshake) = self.handshake(buf) {
             messages.push_back(Some(handshake));
-        } else if buf.len() < NUMBER_SIZE || BigEndian::read_u32(&buf) > buf.len() as u32 {
-            messages.push_back(None);
         } else {
-            let msg_len = BigEndian::read_u32(&buf) as usize;
-            while buf.len() > msg_len {
+            while buf.len() >= size_of::<u32>() {
+                println!("Decoder::decode(): buf.len(): {}", buf.len());
+                let payload_length = BigEndian::read_u32(&buf) as usize;
+                println!("Decoder::decode(): payload_length: {}", payload_length);
+                let message_length = size_of::<u32>() + payload_length;
+                println!("Decoder::decode(): message_length: {}", message_length);
+                if buf.len() < message_length {
+                    //println!("Decoder::decode(): rest of buf: {}", buf.to_hex());
+                    break;
+                }
                 println!(
-                    "Decoder::decode(): buf.len() = {}, msg_len = {}",
-                    buf.len(),
-                    msg_len
+                    "Decoder::decode(): msg: {} ",
+                    buf[0..message_length].to_hex()
                 );
-                buf.split_to(NUMBER_SIZE); // pop message length value
-                let msg = if 0 == msg_len {
-                    Some(Message::KeepAlive())
-                } else {
-                    match buf.split_to(1)[0] {
+
+                buf.split_to(size_of::<u32>()); // consume payload length
+
+                thread::sleep(Duration::from_millis(30));
+                if 0 == payload_length {
+                    messages.push_back(Some(Message::KeepAlive()));
+                } else if buf.len() >= payload_length {
+                    let msg_code = buf.split_to(1)[0]; // consume cmd code
+                    println!("Decoder::decode(): msg_code: {}", msg_code);
+                    let msg = match msg_code {
                         CHOCKE_ID => self.choke(),
                         UNCHOCKE_ID => self.unchoke(),
                         INTERESTED_ID => self.interested(),
                         NOT_INTERESTED_ID => self.not_interested(),
                         HAVE_ID => self.have(buf),
-                        BITFIELD_ID => self.bitfield(buf, msg_len),
+                        BITFIELD_ID => self.bitfield(buf, payload_length),
                         REQUEST_ID => self.request(buf),
-                        PIECE_ID => self.piece(buf, msg_len),
+                        PIECE_ID => self.piece(buf, payload_length),
                         CANCEL_ID => self.cancel(buf),
                         PORT_ID => self.port(buf),
-                        _ => None,
-                    }
-                };
-                messages.push_back(msg);
+                        _ => {
+                            println!("Decoder::decode(): Unknown Message: {:X}", msg_code);
+                            None
+                        }
+                    };
+                    messages.push_back(msg);
+                }
             }
         }
-        *self.complete.lock().unwrap() = buf.is_empty();
         println!("Decoder::decode() messages.len(): {}", messages.len());
-        if messages.len() == 1 && messages.front().unwrap().is_none() {
+        for msg in &messages {
+            println!("Decoder::decode() msg: {:?}", msg);
+        }
+        if messages.is_empty() {
             Ok(None)
         } else {
-            for msg in &messages {
-                println!("Decoder::decode() msg: {:?}", msg);
-            }
             Ok(Some(messages))
         }
     }
@@ -212,9 +223,6 @@ impl Encoder for PeerCodec {
     type Error = io::Error;
 
     fn encode(&mut self, msg: Message, buf: &mut BytesMut) -> io::Result<()> {
-        while !*self.complete.lock().unwrap() {
-            thread::sleep(Duration::from_millis(100));
-        }
         match msg {
             Message::Handshake(hash_info, peer_id) => {
                 if hash_info.len() != HASH_INFO_LEN {
@@ -302,8 +310,7 @@ impl Encoder for PeerCodec {
                 add_u16(buf, port);
             }
         }
-        // println!("PeerCodec::encode() => {:?}", &buf);
-        println!("Encoder::encode() => {:?}", &buf);
+        println!("Encoder::encode() => '{}'", &buf.to_hex());
         Ok(())
     }
 }
