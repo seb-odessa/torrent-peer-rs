@@ -165,7 +165,7 @@ impl Decoder for PeerCodec {
             messages.push_back(Some(handshake));
         } else {
             while buf.len() >= size_of::<u32>() {
-                println!("Decoder::decode(): buf.len(): {}", buf.len());
+                // println!("Decoder::decode(): buf.len(): {}", buf.len());
                 let payload_length = BigEndian::read_u32(&buf) as usize;
                 // println!("Decoder::decode(): payload_length: {}", payload_length);
                 let message_length = size_of::<u32>() + payload_length;
@@ -186,7 +186,7 @@ impl Decoder for PeerCodec {
                     messages.push_back(Some(Message::KeepAlive()));
                 } else if buf.len() >= payload_length {
                     let msg_code = buf.split_to(1)[0]; // consume cmd code
-                    println!("Decoder::decode(): msg_code: {}", msg_code);
+                    // println!("Decoder::decode(): msg_code: {}", msg_code);
                     let msg = match msg_code {
                         CHOCKE_ID => self.choke(),
                         UNCHOCKE_ID => self.unchoke(),
@@ -207,7 +207,7 @@ impl Decoder for PeerCodec {
                 }
             }
         }
-        println!("Decoder::decode() messages.len(): {}", messages.len());
+        // println!("Decoder::decode() messages.len(): {}", messages.len());
         // for msg in &messages {
         //     println!("Decoder::decode() msg: {:?}", msg);
         // }
@@ -310,7 +310,7 @@ impl Encoder for PeerCodec {
                 add_u16(buf, port);
             }
         }
-        println!("Encoder::encode() => '{}'", &buf.to_hex());
+        // println!("Encoder::encode() => '{}'", &buf.to_hex());
         Ok(())
     }
 }

@@ -15,7 +15,6 @@ use std::net::SocketAddr;
 use std::collections::HashSet;
 use std::collections::HashMap;
 
-use futures::Future;
 use tokio_core::reactor::Core;
 use rustc_serialize::hex::FromHex;
 use rustc_serialize::hex::ToHex;
@@ -24,6 +23,13 @@ use torrent_peer::hash::sha1;
 use torrent_peer::Client;
 
 const BLOCK_LEN: u32 = 16384;
+
+/*
+
+0E0F3256B21B0D6D2E58C2BCC79D1963D1162F6A 1307857409 2097152 624
+
+*/
+
 
 pub struct Downloader {
     address: SocketAddr,
@@ -90,31 +96,38 @@ impl Downloader {
     }
 
     /// get vector of received indices
-    pub fn get_indices(&self) -> Vec<u32> {
+    pub fn indices(&self) -> Vec<u32> {
         self.blocks
             .iter()
             .map(|(&(idx, _), _)| idx)
-            .collect::<Vec<u32>>()
+            .collect::<HashSet<u32>>()
+            .iter()
+            .map(|&idx| idx)
+            .collect()
     }
 
     /// load pieces from client into own storage
     fn load(&mut self, blocks: &HashMap<(u32, u32), Vec<u8>>) {
         for (&(index, offset), block) in blocks.iter() {
-            self.requests.remove(&(index, offset, block.len() as u32));
             self.blocks.insert((index, offset), block.clone());
         }
     }
 
-    /// pop request from queue and return it to the caller
-    fn get_request(&mut self) -> Option<(u32, u32, u32)> {
+    /// get next request from queue and return it to the caller
+    fn next(&mut self) -> Option<(u32, u32, u32)> {
         if let Some(&request) = self.requests.iter().next() {
             return Some(request);
         }
         None
     }
 
+    /// remove request from queue
+    fn complete(&mut self, request: &(u32, u32, u32)) {
+        self.requests.remove(&request);
+    }
+
     /// returns vector of u8 with content of the piece by index
-    pub fn get_piece(&mut self, index: u32) -> Option<Vec<u8>> {
+    pub fn piece(&mut self, index: u32) -> Option<Vec<u8>> {
         let mut piece = Vec::new();
         let mut offset = 0;
         while let Some(block) = self.blocks.get_mut(&(index, offset)) {
@@ -129,24 +142,12 @@ impl Downloader {
     }
 
     /// invoke downloader to get all queued indexes
-    fn invoke(&mut self, id: &str, mut attempts: u8) -> Result<(), io::Error> {
+    pub fn invoke(&mut self, id: &str, mut attempts: u8) -> Result<(), io::Error> {
         let mut core = Core::new().unwrap();
         let handle = core.handle();
         let info = self.info_hash.clone();
 
         let mut client = core.run(Client::connect(&self.address, &handle))?;
-
-        // core.run(client.handshake(info, id.as_bytes()).and_then(|c| {
-        //     c.unchoke_me().and_then(|c| if c.am_choked {
-        //         c.unchoke_me()
-        //     } else {
-        //         if let Some(request) = self.get_request() {
-        //             c.request(request.0, request.1, request.2)
-        //         } else {
-        //             c.choke_me()
-        //         }
-        //     })
-        // }));
 
         client = core.run(client.handshake(info, id.as_bytes()))?;
         client = core.run(client.ping())?;
@@ -165,13 +166,13 @@ impl Downloader {
                 attempts -= 1;
             } else {
                 attempts += 1;
-                if let Some(request) = self.get_request() {
-                    client = core.run(client.request(request.0, request.1, request.2))?;
-                    self.load(&client.blocks);
+                if let Some(request) = self.next() {
+                    client = core.run(client.download(&request))?;
+                    self.complete(&request);
                 }
             }
         }
-
+        self.load(&client.blocks);
         Ok(())
     }
 }
@@ -212,8 +213,8 @@ fn main() {
             Err(e) => println!("{}", e),
         }
 
-        for index in dl.get_indices() {
-            if let Some(piece) = dl.get_piece(index) {
+        for index in dl.indices() {
+            if let Some(piece) = dl.piece(index) {
                 println!("{}", sha1(&piece).to_hex());
             }
         }

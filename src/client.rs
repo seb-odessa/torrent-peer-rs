@@ -66,13 +66,13 @@ impl Client {
     }
 
     pub fn dispatch(&mut self) -> Result<(), io::Error> {
-        println!("client::dispatch() START");
+        // println!("client::dispatch() START");
         while let Some(message) = self.messages.pop_front() {
             if let Some(msg) = message {
                 self.process(msg)?;
             }
         }
-        println!("client::dispatch() END");
+        // println!("client::dispatch() END");
         Ok(())
     }
 
@@ -175,6 +175,10 @@ impl Client {
                 self.enqueue(msgs).and(Ok(self))
             },
         ))
+    }
+
+    pub fn download(self, request: &(u32, u32, u32)) -> ClientConnection {
+        self.request(request.0, request.1, request.2)
     }
 
     pub fn bitfield(mut self) -> ClientConnection {
